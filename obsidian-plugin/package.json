@@ -1,0 +1,19 @@
+{
+  "name": "trmnl-health-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-source health dashboard plugin for Obsidian.",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "test": "node esbuild.config.mjs stats && node test/stats.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.21.5",
+    "obsidian": "latest",
+    "typescript": "^5.4.5"
+  }
+}

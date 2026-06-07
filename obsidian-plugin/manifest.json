@@ -1,0 +1,9 @@
+{
+  "id": "trmnl-health-dashboard",
+  "name": "TRMNL Health Dashboard",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Multi-source health dashboard: per-device tabs, per-graph source tiering, and a weighted holistic graph with a ±SD deviation band and min/max whiskers. Reads the Health/ frontmatter written by trmnl-health.",
+  "author": "trmnl-health",
+  "isDesktopOnly": false
+}

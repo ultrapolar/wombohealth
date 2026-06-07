@@ -1,0 +1,36 @@
+.thd-root { padding: 4px 2px; }
+
+.thd-controls {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  margin-bottom: 10px;
+}
+.thd-seg { display: inline-flex; border: 1px solid var(--background-modifier-border); border-radius: 6px; overflow: hidden; }
+.thd-segbtn { border: none; background: var(--background-secondary); padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.thd-segbtn.active { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+.thd-weights { display: flex; flex-wrap: wrap; gap: 10px; }
+.thd-weight { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.thd-weight input[type=range] { width: 90px; }
+.thd-wlabel { font-weight: 600; }
+.thd-wval { width: 1.8em; text-align: right; color: var(--text-muted); }
+
+.thd-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--background-modifier-border); margin-bottom: 12px; }
+.thd-tab { border: none; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; color: var(--text-muted); }
+.thd-tab.active { color: var(--text-normal); font-weight: 600; border-bottom-width: 2px; border-bottom-style: solid; }
+
+.thd-metric { margin-bottom: 22px; }
+.thd-mtitle { font-weight: 600; margin-bottom: 4px; }
+.thd-chart { width: 100%; }
+.thd-chart canvas { display: block; }
+
+.thd-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+.thd-legend .dot { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+.thd-tier { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
+.thd-tierlabel { color: var(--text-muted); margin-right: 4px; }
+.thd-chip { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--background-modifier-border); border-left-width: 3px; border-radius: 5px; padding: 2px 4px 2px 6px; }
+.thd-chip-off { opacity: 0.6; border-left-color: var(--background-modifier-border) !important; }
+.thd-chipbtn { border: none; background: transparent; cursor: pointer; padding: 0 3px; color: var(--text-muted); font-size: 12px; line-height: 1; }
+.thd-chipbtn:hover { color: var(--text-normal); }
+
+.thd-empty { color: var(--text-muted); padding: 16px; }
