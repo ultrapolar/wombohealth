@@ -1,0 +1,71 @@
+{%- comment -%}
+  TRMNL private-plugin markup for trmnl-health.
+  Paste this into the TRMNL plugin's "Markup" editor (Polling strategy).
+  It renders the JSON returned by GET / on your Worker.
+  Tune freely in TRMNL's live preview — field names match src/display.js.
+{%- endcomment -%}
+<div class="layout layout--col gap--medium">
+
+  <div class="columns">
+    <div class="column">
+      <span class="title title--small">SLEEP</span>
+      <div class="value value--xlarge value--tnums">{{ sleep_score }}</div>
+      <span class="label">{{ sleep_duration }} in bed {{ time_in_bed }}</span>
+      <div class="flex gap--small mt--small">
+        <span class="label">REM {{ rem_duration }}</span>
+        <span class="label">Deep {{ deep_duration }}</span>
+        <span class="label">Cyc {{ sleep_cycles }}</span>
+      </div>
+    </div>
+
+    <div class="column">
+      <span class="title title--small">RECOVERY</span>
+      <div class="value value--xlarge value--tnums">{{ recovery_score }}</div>
+      <div class="flex flex--col gap--small mt--small">
+        <span class="label">HRV {{ hrv }} {{ hrv_icon }} &middot; RHR {{ rhr }}</span>
+        <span class="label">SpO2 {{ spo2 }} &middot; {{ avg_temp }}</span>
+        <span class="label">Alert {{ alertness_score }} &middot; VO2 {{ vo2_max }}</span>
+      </div>
+    </div>
+
+    <div class="column">
+      <span class="title title--small">ACTIVITY</span>
+      <div class="value value--xlarge value--tnums">{{ steps }}</div>
+      <span class="label">{{ active_min }} active &middot; move {{ movement_idx }}</span>
+      {% if home_enabled %}
+      <span class="title title--small mt--small">AIR</span>
+      <div class="flex flex--col gap--small">
+        <span class="label">AQI {{ home_aqi }} &middot; CO2 {{ home_co2 }}ppm</span>
+        <span class="label">PM2.5 {{ home_pm25 }} &middot; VOC {{ home_voc }}</span>
+        <span class="label">{{ home_temp }} &middot; {{ home_humidity }} RH</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {%- comment -%} Connected secondary sources (Withings / Fitbit / Polar / Samsung) {%- endcomment -%}
+  {% if secondary and secondary.size > 0 %}
+  <div class="flex flex--col gap--small">
+    {% for s in secondary %}
+    <span class="label">{{ s.name }}:{% if s.sleep != '' %} {{ s.sleep }} sleep{% endif %}{% if s.score != '' %} &middot; score {{ s.score }}{% endif %}{% if s.steps != '' %} &middot; {{ s.steps }} steps{% endif %}{% if s.rhr != '' %} &middot; RHR {{ s.rhr }}{% endif %}{% if s.hrv != '' %} &middot; HRV {{ s.hrv }}{% endif %}{% if s.spo2 != '' %} &middot; SpO2 {{ s.spo2 }}{% endif %}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {%- comment -%} Weekly step chart (Mon..Sun), each bar = % of goal {%- endcomment -%}
+  <div class="flex flex--bottom gap--small" style="height: 56px;">
+    {% assign bars = "" | split: "" %}
+    {% assign bars = bars | push: zone_1 | push: zone_2 | push: zone_3 | push: zone_4 | push: zone_5 | push: zone_6 | push: zone_7 %}
+    {% for b in bars %}
+      <div class="flex flex--col flex--center" style="flex: 1;">
+        <div class="bg--gray-1" style="width: 100%; height: {{ b }}%; min-height: 2px;"></div>
+        <span class="label label--small">{{ forloop.index | minus: 1 | plus: 1 }}</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="title_bar">
+    <span class="title">Ultrahuman</span>
+    <span class="instance">Updated {{ meta.last_updated }}{% if meta.stale %} &middot; yesterday{% endif %}</span>
+  </div>
+</div>

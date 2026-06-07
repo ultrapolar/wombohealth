@@ -1,0 +1,19 @@
+{
+  "_note": "PROVISIONAL shape for offline tests only. Confirm real shape via GET /debug/raw and update src/sources/ultrahuman.js parseHome() if it differs.",
+  "data": {
+    "metrics": {
+      "2026-05-30": [
+        { "type": "aqi", "object": { "value": 42 } },
+        { "type": "voc", "object": { "value": 120 } },
+        { "type": "co2", "object": { "value": 650 } },
+        { "type": "pm2_5", "object": { "value": 8 } },
+        { "type": "pm10", "object": { "value": 14 } },
+        { "type": "temperature", "object": { "celsius": 22.5 } },
+        { "type": "humidity", "object": { "value": 47 } },
+        { "type": "noise", "object": { "value": 38 } },
+        { "type": "light", "object": { "value": 120 } },
+        { "type": "uv", "object": { "value": 0 } }
+      ]
+    }
+  }
+}

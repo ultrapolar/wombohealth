@@ -1,0 +1,30 @@
+{
+  "data": {
+    "metrics": {
+      "2026-05-30": [
+        {
+          "type": "sleep",
+          "object": {
+            "sleep_score": { "score": 82 },
+            "total_sleep": { "seconds": 27000 },
+            "rem_sleep": { "seconds": 5400 },
+            "deep_sleep": { "seconds": 6000 },
+            "light_sleep": { "seconds": 15600 },
+            "time_in_bed": { "seconds": 30000 },
+            "full_sleep_cycles": { "cycles": 5 },
+            "morning_alertness": { "index": 78 },
+            "average_body_temperature": { "celsius": 34.8 },
+            "spo2": { "value": 97 }
+          }
+        },
+        { "type": "steps", "object": { "total": 8423 } },
+        { "type": "avg_sleep_hrv", "object": { "avg": 44 } },
+        { "type": "night_rhr", "object": { "avg": 54 } },
+        { "type": "vo2_max", "object": { "value": 41 } },
+        { "type": "active_minutes", "object": { "total": 62 } },
+        { "type": "movement_index", "object": { "value": 73 } },
+        { "type": "recovery_index", "object": { "value": 80 } }
+      ]
+    }
+  }
+}

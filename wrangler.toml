@@ -1,0 +1,35 @@
+name = "trmnl-health"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# KV namespace for caching + history. Create it once with:
+#   npx wrangler kv namespace create KV_STORE
+#   npx wrangler kv namespace create KV_STORE --preview
+# then paste the ids below.
+kv_namespaces = [
+  { binding = "KV_STORE", id = "REPLACE_WITH_KV_ID", preview_id = "REPLACE_WITH_PREVIEW_ID" }
+]
+
+[vars]
+# Prefer an IANA timezone name (handles DST automatically). Falls back to
+# USER_TZ_OFFSET (hours) only if USER_TIMEZONE is unset.
+USER_TIMEZONE = "America/New_York"
+USER_TZ_OFFSET = "-4"
+STEP_GOAL = "10000"        # used to scale the weekly step chart
+HOME_ENABLED = "true"      # set "false" if you don't have an Ultrahuman Home
+
+# Secondary-source OAuth client IDs (leave blank until you register a dev app for each).
+# The matching *_CLIENT_SECRET goes in secrets, not here.
+WITHINGS_CLIENT_ID = ""
+FITBIT_CLIENT_ID = ""
+POLAR_CLIENT_ID = ""
+
+# --- Secrets: DO NOT put these here. Set them with wrangler: ---
+#   npx wrangler secret put API_TOKEN              # Ultrahuman personal token (vision.ultrahuman.com/developer)
+#   npx wrangler secret put EXPORT_KEY             # long random string; gates /json, /status, /debug, /ingest
+#   npx wrangler secret put WITHINGS_CLIENT_SECRET # only if connecting Withings
+#   npx wrangler secret put FITBIT_CLIENT_SECRET   # only if connecting Fitbit
+#   npx wrangler secret put POLAR_CLIENT_SECRET    # only if connecting Polar
+#
+# Register each dev app with redirect URI: https://<your-worker>/callback/<source>
+#   Withings: https://developer.withings.com/   Fitbit: https://dev.fitbit.com/   Polar: https://admin.polaraccesslink.com/

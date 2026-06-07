@@ -1,0 +1,42 @@
+{
+  "date": "2026-05-30",
+  "generated_at": "2026-05-31T07:30:00.000Z",
+  "stale": false,
+  "ultrahuman": {
+    "sleep": {
+      "score": 82, "duration_sec": 27000, "duration_min": 450,
+      "rem_sec": 5400, "deep_sec": 6000, "light_sec": 15600, "time_in_bed_sec": 30000,
+      "cycles": 5, "alertness": 78, "hrv": 44, "rhr": 54, "spo2": 97, "temp_c": 34.8
+    },
+    "recovery": { "index": 80 },
+    "activity": { "steps": 8423, "active_min": 62, "movement_index": 73, "vo2_max": 41 },
+    "home": {
+      "aqi": 42, "voc": 120, "hcho": null, "co": null, "co2": 650,
+      "pm1": null, "pm25": 8, "pm10": 14, "temp_c": 22.5,
+      "humidity": 47, "noise": 38, "light": 120, "uv": 0
+    }
+  },
+  "withings": {
+    "connected": true,
+    "sleep": { "score": 72, "duration_min": 415, "deep_min": 78, "rem_min": 95, "light_min": 242, "awake_min": 20, "hr_avg": 58, "hr_min": 52, "snoring_min": 6 },
+    "activity": null,
+    "vitals": { "rhr": 52 },
+    "extra": {}
+  },
+  "fitbit": {
+    "connected": true,
+    "sleep": { "score": null, "duration_min": 430, "deep_min": 70, "rem_min": 90, "light_min": 270, "awake_min": 35, "efficiency": 95 },
+    "activity": { "steps": 9120, "active_min": 41, "calories": 2450, "distance_m": 7300 },
+    "vitals": { "rhr": 56, "spo2": 96, "hrv": 38, "breathing_rate": 15.2 },
+    "extra": {}
+  },
+  "polar": {
+    "connected": true,
+    "sleep": { "score": 80, "duration_min": 420, "deep_min": 75, "rem_min": 88, "light_min": 257, "awake_min": 18 },
+    "activity": null,
+    "vitals": { "rhr": 53, "hrv": 42 },
+    "extra": { "nightly_recharge_status": 4 }
+  },
+  "samsung": null,
+  "trends": { "hrv": "up", "rhr": "down", "steps": "up" }
+}

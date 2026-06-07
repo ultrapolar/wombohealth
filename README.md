@@ -1,118 +1,163 @@
-# Ultrahuman for TRMNL
+# trmnl-health
 
-A custom serverless plugin that fetches live health metrics from the **Ultrahuman Ring Air** and formats them for the **TRMNL** e-ink display.
+A multi-source health dashboard for **TRMNL** e-ink displays **plus an automatic daily export into Obsidian**.
 
-Built on **Cloudflare Workers**, this plugin handles authentication, data processing, history tracking, and intelligent caching to provide a reliable, "set it and forget it" dashboard.
-![IMG20260117120301](https://github.com/user-attachments/assets/8370542d-7341-454e-ac0e-e865c313a1d8)
+Forked from [Jay9185/TRMNL-ULTRAHUMAN](https://github.com/Jay9185/TRMNL-ULTRAHUMAN) and expanded:
 
-![IMG20260117115857](https://github.com/user-attachments/assets/25c54f21-923c-4410-b760-f8d643af370c)
+- Pulls **Ultrahuman Ring AIR** *and* **Ultrahuman Home** (air quality) from the Partner API.
+- Cloudflare Worker is the **single source of truth**: it serves the TRMNL display payload **and** a secured JSON route.
+- A small **Python exporter** writes a non-destructive **Health block + Dataview inline fields** into your daily note each morning.
+- Built around a **source-adapter pattern** so Withings / Fitbit / Polar (and later Samsung) plug in without rewrites.
 
-## ⚡ Key Features
+## Architecture
 
-* **Live Metrics:** Displays Sleep Score, Duration, Recovery Index, HRV, RHR, Temperature, SpO2, Steps, and Movement Index.
-* **Smart Trends:** Compares today's HRV with yesterday's to display trend arrows (▲/▼).
-* **7-Day History Chart:** Automatically tracks step counts to generate a weekly bar chart at the bottom of the screen.
-* **Zero-Data Fallback:** If you wake up past midnight and the ring hasn't synced yet, the plugin automatically displays yesterday's data instead of showing empty zeros.
-* **Auto-Audit Engine:** Every 3 days, it performs a background "audit" to fetch the last 7 days of data, correcting any past discrepancies (e.g., edited sleep times).
-* **Secure:** API tokens are stored in Cloudflare Encrypted Secrets, not in the code.
-* **Efficient:** Uses `KV_STORE` for caching and history, minimizing API calls to Ultrahuman.
+```
+Ultrahuman API ─┐
+Withings  (LT) ─┤   Cloudflare Worker (source of truth)          TRMNL device
+Fitbit    (LT) ─┼─> sources/* → aggregate → unified model ──┬──> GET /       (display JSON, polled)
+Polar     (LT) ─┘     + KV cache, trends, fallback          └──> GET /json   (unified, key-gated)
+                                                                     │
+                                         Windows Task Scheduler ─> exporter/export.py
+                                                                     │  GET /json?date=…  (X-Export-Key)
+                                                                     ▼
+                             Obsidian: Notes/Daily Notes/YY-MM-DD.md  (Health block + inline fields)
+```
 
-## 🛠️ Prerequisites
+## Layout
 
-1. **Ultrahuman Ring** (Air or R1).
-2. **Ultrahuman API Key**: Go to **[https://vision.ultrahuman.com/developer](https://vision.ultrahuman.com/developer)** to generate your personal API Key.
-3. **TRMNL Device**: [Get one here](https://usetrmnl.com/).
-4. **Cloudflare Account**: A free account works perfectly.
+```
+src/
+  index.js              # Worker routes: / (TRMNL), /json (exporter), /debug/raw (schema discovery)
+  aggregate.js          # unified per-day model = the /json contract
+  display.js            # unified -> flat payload TRMNL polls
+  sources/ultrahuman.js # Ring (daily_metrics) + Home (home_metrics) adapters + parsers
+  lib/util.js           # pure helpers (durations, trends, tz dates, weekly chart)
+wrangler.toml           # Worker config (KV binding, vars; secrets set via wrangler)
+trmnl-markup.liquid     # paste into the TRMNL private plugin's Markup editor
+exporter/
+  export.py             # fetch /json -> upsert Health block into the daily note (stdlib only)
+  config.toml.example   # copy to config.toml (gitignored) and fill in
+  register-task.ps1     # registers the daily Windows Scheduled Task
+test/
+  run.mjs               # offline worker-logic test (node test/run.mjs)
+  fixtures/             # sample API + unified payloads
+obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
+```
 
-## 🚀 Setup Guide
+## Setup
 
-### 1. Create the Cloudflare Worker
+### Prerequisites
+- **Ultrahuman** Ring (Air/R1) and, for air quality, an **Ultrahuman Home** on the same account.
+- **Ultrahuman API token** — generate at <https://vision.ultrahuman.com/developer>.
+- **Cloudflare** account (free) and **Node** (for `wrangler`).
+- **TRMNL** device.
 
-1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/).
-2. Go to **Workers & Pages** -> **Create Application** -> **Create Worker**.
-3. Name it `ultrahuman-trmnl` (or similar).
-4. Click **Deploy**.
+### 1. Deploy the Worker
+```bash
+npm install
+npx wrangler login
+npx wrangler kv namespace create KV_STORE            # paste the id into wrangler.toml
+npx wrangler kv namespace create KV_STORE --preview  # paste the preview_id too
+npx wrangler secret put API_TOKEN     # your Ultrahuman token
+npx wrangler secret put EXPORT_KEY    # any long random string (shared with the exporter)
+# set USER_TIMEZONE / HOME_ENABLED in wrangler.toml [vars]
+npx wrangler deploy
+```
+Local dev instead: copy `.dev.vars.example` → `.dev.vars`, then `npx wrangler dev`.
 
-### 2. Configure the KV Namespace (Database)
+### 2. Confirm the Home schema (one-time)
+The Home Metrics response shape isn't in Ultrahuman's public docs, so `parseHome()` ships with a
+**provisional** field map. Verify it against your real data:
+```
+GET https://<your-worker>/debug/raw?date=YYYY-MM-DD&key=<EXPORT_KEY>
+```
+Check the `home` object’s field names; if they differ, adjust the `pick([...])` lists in
+[`src/sources/ultrahuman.js`](src/sources/ultrahuman.js) and redeploy.
 
-This plugin needs a small database to store your history and trends.
+### 3. Connect TRMNL
+1. TRMNL dashboard → **Plugins → Private Plugin**, strategy **Polling**.
+2. URL = your Worker root (`https://<your-worker>/`).
+3. Paste [`trmnl-markup.liquid`](trmnl-markup.liquid) into the **Markup** editor; tune in the live preview.
+4. Refresh rate 15–30 min.
 
-1. In your Worker's dashboard, go to **Settings** -> **Variables**.
-2. Scroll down to **KV Namespace Bindings**.
-3. Click **Add Binding**.
-* **Variable name:** `KV_STORE` (Must be exact).
-* **KV Namespace:** Click "Create new" and name it `trmnl_db`.
+### 4. Daily Obsidian export
+```bash
+cd exporter
+cp config.toml.example config.toml      # fill worker_url, export_key, vault_path
+python export.py --date 2026-05-30 --dry-run   # preview
+python export.py --date 2026-05-30             # write one day
+powershell -ExecutionPolicy Bypass -File .\register-task.ps1   # schedule daily 07:30
+```
+Each run re-syncs the last `backfill_days` days (default 3), so a missed morning or a late ring
+sync self-heals. The exporter only ever rewrites the block between `<!-- HEALTH:START -->` and
+`<!-- HEALTH:END -->`; the rest of your note is never touched. If the day's note doesn't exist yet
+it's created from your `template_path`.
 
+### 5. Connect Withings / Fitbit / Polar (optional)
+For each service you want to add:
+1. Register a developer app and set its **redirect URI** to `https://<your-worker>/callback/<source>`
+   (`<source>` = `withings`, `fitbit`, or `polar`).
+   - Withings — <https://developer.withings.com/>
+   - Fitbit — <https://dev.fitbit.com/> (app type **Server**, OAuth 2.0)
+   - Polar — <https://admin.polaraccesslink.com/>
+2. Put the client id in `wrangler.toml` (`WITHINGS_CLIENT_ID`, etc.) and the secret via
+   `npx wrangler secret put WITHINGS_CLIENT_SECRET` (same pattern for `FITBIT_`/`POLAR_`), then redeploy.
+3. Open `https://<your-worker>/connect/<source>` in a browser and approve. Tokens are stored in KV and
+   auto-refreshed (Withings/Fitbit); Polar tokens are long-lived and auto-register the AccessLink user.
 
-4. Click **Save**.
+Check `https://<your-worker>/status?key=<EXPORT_KEY>` to see what's connected. Connected sources show
+up automatically in `/json` and in each daily note — no exporter changes needed.
 
-### 3. Add Your API Token (Secret)
+### 6. Samsung Galaxy Watch (optional, push-based)
+Samsung has no cloud API, so an on-device **Health Connect** bridge (HTTP Shortcuts / Tasker /
+MacroDroid, or a small companion app) pushes a day's metrics:
 
-Never hardcode your token. Use Secrets.
+```
+POST https://<your-worker>/ingest/samsung?date=YYYY-MM-DD
+Header: X-Export-Key: <EXPORT_KEY>
+Body:   {"sleep":{"duration_min":430,"deep_min":70},"activity":{"steps":9000},"vitals":{"rhr":55}}
+```
 
-1. Still in **Settings** -> **Variables**, scroll to **Environment Variables**.
-2. Click **Add Variable**.
-* **Variable name:** `API_TOKEN`
-* **Value:** Paste the API Key you got from the Ultrahuman Developer portal.
-* **Click "Encrypt"** to make it a Secret.
+See [`src/sources/samsung.js`](src/sources/samsung.js) for the full accepted shape.
 
+## How it works
+- **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached
+  data if the ring hasn't synced past midnight (`meta.stale = true`).
+- **GET /json?date=** — the structured unified model for a given day (key-gated). What the exporter reads.
+- **GET /debug/raw?date=** — raw upstream responses for schema discovery (key-gated).
+- **GET /status** — which sources are configured/connected (key-gated).
+- **GET /connect/:source** & **/callback/:source** — one-time OAuth linking for Withings/Fitbit/Polar.
+- **POST /ingest/samsung** — accept pushed Samsung metrics (key-gated).
+- **KV** caches each day's ring/home, stores per-source OAuth tokens, and runs a background **audit**
+  every 3 days that backfills the last 7 days (powers the weekly step chart and HRV trend arrow).
 
-3. Click **Save**.
+## Status
+- ✅ Ultrahuman **Ring + Home** → unified `/json`, TRMNL payload, Obsidian exporter — built & tested offline.
+- ✅ **Withings / Fitbit / Polar** OAuth adapters + **Samsung** ingest — built & tested offline.
+- ⏳ Remaining: deploy, then confirm a few *provisional* field maps against live data — Ultrahuman
+  **Home** (via `/debug/raw`) and **Polar** sleep keys — and tune the TRMNL Liquid for the extra sources.
 
-### 4. Deploy the Code
+Adding another source later is additive: a new `src/sources/<name>.js` (normalize → unified model)
+that `/json`, the TRMNL payload, and the exporter pick up automatically.
 
-1. Click **Edit Code** to open the online editor.
-2. Copy the content of `worker.js` from this repository.
-3. Paste it into the editor, replacing the existing code.
-4. **Important:** Check line 8: `const USER_TZ_OFFSET = 5.5;`
-* Default is `5.5` (IST - India Standard Time).
-* Change this to your offset if different (e.g., `-5.0` for EST, `0` for GMT).
+## Visualizations in Obsidian
+Three layers, all fed by what the exporter writes:
 
+1. **Inline Dataview fields** in each daily note (`UH-Sleep-Score:: 82`) → chart with the
+   [Tracker](https://github.com/pyrochlore/obsidian-tracker) plugin or plain Dataview.
+2. **`Health/<date>.md` frontmatter** (enable `health_folder`) → browse with core **Bases**, or render
+   prebuilt charts with [health-md-visualizations](https://github.com/codybontecou/health-md-visualizations).
+   Each file carries both merged keys (for that plugin) and per-device keys (`ultrahuman_hrv`, `fitbit_hrv`, …).
+3. **Custom dashboard plugin** in [`obsidian-plugin/`](obsidian-plugin/) — per-device tabs, per-graph source
+   **tiering**, and a **weighted holistic graph** with a ±1 SD band + min/max whiskers. Build with
+   `npm install && npm run build`, then copy `main.js`/`manifest.json`/`styles.css` into
+   `<vault>/.obsidian/plugins/trmnl-health-dashboard/` and add a ` ```health-dashboard ``` ` block.
 
-5. Click **Deploy**.
+**Backfill history** to populate the charts (writes only `Health/` files, leaves your journal alone):
+```bash
+cd exporter
+python export.py --days 90 --health-only      # last 90 days of Health/<date>.md
+```
 
-### 5. Connect to TRMNL
-
-1. Copy your Worker's URL (e.g., `https://ultrahuman-trmnl.yourname.workers.dev`).
-2. Go to your [TRMNL Dashboard](https://usetrmnl.com/dashboard).
-3. Navigate to **Plugins** -> **Private Plugin**.
-4. Paste your Worker URL into the **URL** field.
-5. Set the **Refresh Rate** (Recommended: 15 or 30 minutes).
-6. Save and check your device!
-
-## 🧩 How It Works
-
-### The "Midnight Gap" Problem
-
-Health APIs often return empty data right after midnight (00:00 - 06:00) before you wake up and sync your ring.
-
-* **Standard Plugins:** Show "0 Steps", "0 Sleep".
-* **This Plugin:** Detects the empty data and automatically fetches and displays **Yesterday's** full stats until Today's data becomes available.
-
-### The Audit System
-
-The plugin runs a lightweight "Audit" in the background:
-
-* **Trigger:** Runs if the database is empty or hasn't been updated in 3 days.
-* **Action:** Fetches the last 7 days of raw data in parallel.
-* **Result:** Updates the Weekly Step Chart and recalculates trend baselines.
-
-## ⚠️ Troubleshooting
-
-**My screen shows "!!" or "Check Logs"**
-
-* This means the worker encountered an error.
-* Go to Cloudflare Dashboard -> Your Worker -> Logs -> Real-time Logs.
-* Refresh the TRMNL plugin to trigger a request and see the specific error message.
-
-**I see "API Error 401"**
-
-* Your `API_TOKEN` is invalid or missing. Go to Settings -> Variables and re-enter it as a Secret.
-
-**I see 0% SpO2**
-
-* This happens if the ring hasn't recorded blood oxygen data for the night yet. The plugin tries to calculate an average from raw data if the main reading is missing, but sometimes (rarely) no data exists yet.
-
-## 📄 License
-
-MIT License. Feel free to modify and share!
+## Credits
+Forked from [Jay9185/TRMNL-ULTRAHUMAN](https://github.com/Jay9185/TRMNL-ULTRAHUMAN). MIT licensed.

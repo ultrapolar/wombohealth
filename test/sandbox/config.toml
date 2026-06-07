@@ -1,0 +1,6 @@
+# Sandbox config used only by the exporter self-test (points at a throwaway vault).
+vault_path    = "C:/Users/lazer/Documents/Projects/trmnl-health/test/sandbox/vault"
+daily_folder  = "Notes/Daily Notes"
+daily_format  = "%y-%m-%d"
+template_path = "004 Resources/Templates/Daily Notes Template.md"
+backfill_days = 1
