@@ -1,0 +1,16 @@
+# Copy this to "config.toml" and fill in. config.toml is gitignored
+# (it holds your export_key and local vault path).
+
+vault_path    = "C:/Users/lazer/Documents/OBSIDIAN/Selfhelp"
+daily_folder  = "Notes/Daily Notes"
+daily_format  = "%y-%m-%d"                                   # matches Periodic Notes "YY-MM-DD"
+template_path = "004 Resources/Templates/Daily Notes Template.md"
+
+worker_url    = "https://trmnl-health.<your-subdomain>.workers.dev"
+export_key    = "PASTE_THE_SAME_EXPORT_KEY_YOU_SET_ON_THE_WORKER"
+
+backfill_days = 3      # each run re-syncs the last N days (covers missed runs / late ring syncs)
+
+# Optional: also emit Health/<date>.md frontmatter files for the
+# health-md-visualizations Obsidian plugin. Leave blank to disable.
+health_folder = "Health"
