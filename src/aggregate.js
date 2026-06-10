@@ -3,7 +3,7 @@
 // from GET /json. Additional sources attach under their own top-level keys.
 
 export function buildUnified({
-  date, ring, home, withings = null, fitbit = null, polar = null, samsung = null,
+  date, ring, home, withings = null, fitbit = null, polar = null, samsung = null, wyze = null,
   trends = {}, stale = false,
 }) {
   return {
@@ -57,6 +57,8 @@ export function buildUnified({
     fitbit,
     polar,
     samsung,
+    // Wyze body composition — its own category: { connected, carried_forward, measured_date, body }
+    wyze,
     trends,
   };
 }

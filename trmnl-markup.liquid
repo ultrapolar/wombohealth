@@ -52,6 +52,13 @@
   </div>
   {% endif %}
 
+  {%- comment -%} Body composition (Wyze scale), shown only when present {%- endcomment -%}
+  {% if body %}
+  <div class="flex flex--col gap--small">
+    <span class="label">Body: {{ body.weight }} &middot; {{ body.body_fat }} fat &middot; muscle {{ body.muscle }} &middot; visceral {{ body.visceral }} &middot; BMR {{ body.bmr }}{% if body.stale %} &middot; as of {{ body.measured }}{% endif %}</span>
+  </div>
+  {% endif %}
+
   {%- comment -%} Weekly step chart (Mon..Sun), each bar = % of goal {%- endcomment -%}
   <div class="flex flex--bottom gap--small" style="height: 56px;">
     {% assign bars = "" | split: "" %}

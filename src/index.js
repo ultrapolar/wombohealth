@@ -15,6 +15,7 @@ import * as withings from './sources/withings.js';
 import * as fitbit from './sources/fitbit.js';
 import * as polar from './sources/polar.js';
 import * as samsung from './sources/samsung.js';
+import * as wyze from './sources/wyze.js';
 
 const AUDIT_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const DISPLAY_TTL_MS = 120 * 1000;                 // server-side cache for "/" (caps upstream fan-out)
@@ -91,6 +92,7 @@ export default {
           out[k] = { configured: OAUTH[k].configured(env), connected: !!(await env.KV_STORE.get(`oauth_${k}`)) };
         }
         out.samsung = { ingested_today: !!(await env.KV_STORE.get(`samsung_${todayStr}`)) };
+        out.wyze = { last_weigh_in: (await env.KV_STORE.get('wyze_latest', { type: 'json' }))?.date || null };
         return json(out);
       }
 
@@ -106,6 +108,21 @@ export default {
         const date = validDate(url.searchParams.get('date') || body.date);
         if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
         await samsung.ingest(env, date, body); // ingest() drops everything but allowlisted numbers
+        return json({ ok: true, date });
+      }
+
+      // --- Wyze scale ingest (body composition; sanitized, size-capped) ---
+      if (path === '/ingest/wyze') {
+        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
+        if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
+        if (Number(request.headers.get('content-length') || 0) > MAX_INGEST_BYTES) {
+          return json({ error: 'body too large' }, 413);
+        }
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== 'object') return json({ error: 'invalid JSON body' }, 400);
+        const date = validDate(url.searchParams.get('date') || body.date);
+        if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
+        await wyze.ingest(env, date, body); // ingest() drops everything but allowlisted numbers
         return json({ ok: true, date });
       }
 
@@ -159,10 +176,10 @@ async function safeGet(adapter, env, date) {
 }
 
 async function gatherSecondary(env, date) {
-  const [w, f, p, s] = await Promise.all(
-    [withings, fitbit, polar, samsung].map((a) => safeGet(a, env, date)),
+  const [w, f, p, s, wy] = await Promise.all(
+    [withings, fitbit, polar, samsung, wyze].map((a) => safeGet(a, env, date)),
   );
-  return { withings: w, fitbit: f, polar: p, samsung: s };
+  return { withings: w, fitbit: f, polar: p, samsung: s, wyze: wy };
 }
 
 async function getRing(env, date, token) {

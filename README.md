@@ -121,6 +121,26 @@ Body:   {"sleep":{"duration_min":430,"deep_min":70},"activity":{"steps":9000},"v
 
 See [`src/sources/samsung.js`](src/sources/samsung.js) for the full accepted shape.
 
+### 7. Wyze smart scale (optional, body composition)
+Wyze has no official API, so a local Python puller reads your weigh-ins (via the
+reverse-engineered `wyze-sdk`) and pushes them to the Worker — landing in **both** the
+TRMNL "Body" tile and your Obsidian notes (`Wyze-*` fields).
+1. `pip install wyze-sdk`
+2. Generate an **API key + Key Id** at <https://developer-api-console.wyze.com> (same Wyze account).
+3. Add a `[wyze]` section to `exporter/config.toml` (email, password, key_id, api_key; add
+   `totp_key` **only** if your account uses an authenticator app — **SMS/email 2FA can't be automated**).
+4. Verify once, then run:
+   ```bash
+   cd exporter
+   python wyze_pull.py --debug      # dumps one weigh-in's raw fields so you can sanity-check units
+   python wyze_pull.py --dry-run    # preview what would be sent
+   python wyze_pull.py              # push to the Worker (register-task.ps1 schedules it daily)
+   ```
+Captured: weight, BMI, body fat %, muscle, body water %, BMR, visceral fat, bone mass,
+metabolic age, protein. Weigh-ins are sparse, so the latest reading is carried forward and
+shown "as of &lt;date&gt;". (Heads-up: it's a reverse-engineered API — it can break when Wyze
+changes auth; a break only stops scale updates, the rest of the pipeline keeps working.)
+
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached
   data if the ring hasn't synced past midnight (`meta.stale = true`).

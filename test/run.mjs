@@ -9,6 +9,7 @@ import { normalizeSleep as withingsNormalize } from '../src/sources/withings.js'
 import { normalize as fitbitNormalize } from '../src/sources/fitbit.js';
 import { normalize as polarNormalize } from '../src/sources/polar.js';
 import { normalize as samsungNormalize } from '../src/sources/samsung.js';
+import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
 import { buildUnified } from '../src/aggregate.js';
 import { buildDisplay } from '../src/display.js';
 import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
@@ -123,6 +124,28 @@ assert.equal(display2.secondary.length, 2, 'display secondary count');
 assert.equal(display2.secondary[0].name, 'Withings', 'secondary[0] name');
 assert.equal(display2.secondary[0].sleep, '6h 55m', 'secondary withings sleep fmt');
 assert.equal(display2.secondary[1].steps, 9120, 'secondary fitbit steps');
+
+// --- Wyze body composition ---
+const wclean = wyzeSanitize({ measured_at: 1748390400, body: { weight_kg: 78.2, bmr_kcal: '1680', evil: '<x>', body_fat_pct: 18.4 } });
+assert.equal(wclean.body.weight_kg, 78.2, 'wyze weight kept');
+assert.equal(wclean.body.bmr_kcal, 1680, 'wyze numeric string coerced');
+assert.equal('evil' in wclean.body, false, 'wyze non-allowlisted field dropped');
+assert.equal(wclean.measured_at, 1748390400, 'wyze measured_at kept');
+
+const uWyze = buildUnified({
+  date: '2026-05-30', ring, home,
+  wyze: { connected: true, carried_forward: true, measured_date: '2026-05-28', body: { weight_kg: 78.2, body_fat_pct: 18.4 } },
+});
+assert.equal(uWyze.wyze.body.weight_kg, 78.2, 'unified carries wyze body');
+
+const dispBody = buildDisplay({
+  ring, home, chart, hrvTrend: '▲', lastUpdated: '07:30', homeEnabled: true,
+  sources: { wyze: { connected: true, carried_forward: true, measured_date: '2026-05-28',
+    body: { weight_kg: 78.2, body_fat_pct: 18.4, muscle_mass_kg: 60.1, visceral_fat: 7, bmr_kcal: 1680 } } },
+});
+assert.equal(dispBody.body.weight, '78.2kg', 'display body weight');
+assert.equal(dispBody.body.body_fat, '18.4%', 'display body fat');
+assert.equal(dispBody.body.stale, true, 'display body carried-forward flag');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

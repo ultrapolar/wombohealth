@@ -1,3 +1,4 @@
-# No third-party dependencies — the exporter uses only the Python 3.11+ standard
-# library (urllib, tomllib, argparse, datetime, pathlib, logging).
-# Just run it with your system Python 3.11+ (you have 3.14).
+# export.py uses only the Python 3.11+ standard library — no install needed.
+#
+# wyze_pull.py (optional Wyze smart-scale puller) additionally needs wyze-sdk:
+#   pip install wyze-sdk

@@ -82,5 +82,21 @@ export function buildDisplay({ ring, home, chart, hrvTrend, lastUpdated, homeEna
     srcEntry('Samsung', sources.samsung),
   ].filter(Boolean);
 
+  // Body composition (Wyze) — a dedicated tile, not a sleep/steps row.
+  const wy = sources.wyze;
+  if (wy && wy.body) {
+    const b = wy.body;
+    p.body = {
+      weight: b.weight_kg != null ? `${b.weight_kg}kg` : (b.weight_lb != null ? `${b.weight_lb}lb` : '--'),
+      body_fat: b.body_fat_pct != null ? `${b.body_fat_pct}%` : '--',
+      muscle: b.muscle_mass_kg != null ? `${b.muscle_mass_kg}kg` : '--',
+      water: b.body_water_pct != null ? `${b.body_water_pct}%` : '--',
+      visceral: b.visceral_fat ?? '--',
+      bmr: b.bmr_kcal ?? '--',
+      measured: wy.measured_date || '--',
+      stale: !!wy.carried_forward,
+    };
+  }
+
   return p;
 }

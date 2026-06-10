@@ -38,5 +38,16 @@
     "extra": { "nightly_recharge_status": 4 }
   },
   "samsung": null,
+  "wyze": {
+    "connected": true,
+    "carried_forward": true,
+    "measured_date": "2026-05-28",
+    "measured_at": 1748390400,
+    "body": {
+      "weight_kg": 78.2, "weight_lb": 172.4, "bmi": 23.1, "body_fat_pct": 18.4,
+      "muscle_mass_kg": 60.1, "body_water_pct": 55.2, "bmr_kcal": 1680,
+      "visceral_fat": 7, "bone_mass_kg": 3.1, "metabolic_age": 29, "protein_pct": 18.0
+    }
+  },
   "trends": { "hrv": "up", "rhr": "down", "steps": "up" }
 }

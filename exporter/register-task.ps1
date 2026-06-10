@@ -23,6 +23,16 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatt
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
     -Description "Daily Ultrahuman -> Obsidian health export" -Force | Out-Null
 
+# Optional: also schedule the Wyze scale puller (daily, just before the export) if present.
+$wyze = Join-Path $PSScriptRoot "wyze_pull.py"
+if (Test-Path $wyze) {
+    $wAction  = New-ScheduledTaskAction -Execute $python -Argument "`"$wyze`"" -WorkingDirectory $PSScriptRoot
+    $wTrigger = New-ScheduledTaskTrigger -Daily -At "07:15"
+    Register-ScheduledTask -TaskName "TRMNL Wyze Pull" -Action $wAction -Trigger $wTrigger -Settings $settings `
+        -Description "Daily Wyze scale -> trmnl-health Worker" -Force | Out-Null
+    Write-Host "Registered 'TRMNL Wyze Pull' daily at 07:15."
+}
+
 Write-Host "Registered '$TaskName' to run python $script daily at $Time."
 Write-Host "Test now:  schtasks /run /tn `"$TaskName`""
 Write-Host "Remove:    Unregister-ScheduledTask -TaskName `"$TaskName`" -Confirm:`$false"

@@ -14,3 +14,16 @@ backfill_days = 3      # each run re-syncs the last N days (covers missed runs /
 # Optional: also emit Health/<date>.md frontmatter files for the
 # health-md-visualizations Obsidian plugin. Leave blank to disable.
 health_folder = "Health"
+
+# --- Wyze smart scale (optional) — used only by wyze_pull.py ---
+# Requires `pip install wyze-sdk` and an API key from https://developer-api-console.wyze.com
+# (same Wyze account). Scripted login needs authenticator-app (TOTP) 2FA; SMS/email MFA
+# cannot be automated. This whole file is gitignored, so creds stay local.
+[wyze]
+email = "you@example.com"
+password = "your-wyze-password"
+key_id = "WYZE_KEY_ID"
+api_key = "WYZE_API_KEY"
+# totp_key = "BASE32TOTPSECRET"   # only if your Wyze account uses an authenticator app
+# device_model = "JA.SC"          # only set if --debug/get_records returns nothing for your scale
+tz_offset = -4                     # your UTC offset (hours), to date-stamp weigh-ins locally
