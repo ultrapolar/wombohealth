@@ -1,6 +1,6 @@
 // Fitbit source adapter. Standard OAuth2 (confidential client: Basic-auth token
 // endpoint, rotating refresh tokens). Pulls sleep + activity + heart + hrv + spo2 + br.
-import { loadTokens, saveTokens, isExpired, expiresAt, formEncode, basicAuth } from '../lib/oauth.js';
+import { saveTokens, expiresAt, formEncode, basicAuth, getAccessToken as sharedAccessToken } from '../lib/oauth.js';
 
 export const id = 'fitbit';
 const AUTH = 'https://www.fitbit.com/oauth2/authorize';
@@ -48,14 +48,9 @@ export async function exchangeCode(env, code, redirectUri) {
   }));
 }
 
-export async function getAccessToken(env) {
-  let t = await loadTokens(env, id);
-  if (!t) return null;
-  if (isExpired(t)) {
-    t = await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: t.refresh_token });
-    await saveTokens(env, id, t);
-  }
-  return t.access_token;
+export function getAccessToken(env) {
+  return sharedAccessToken(env, id, (rt) =>
+    tokenRequest(env, { grant_type: 'refresh_token', refresh_token: rt }));
 }
 
 async function get(token, path) {

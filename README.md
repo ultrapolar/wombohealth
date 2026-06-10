@@ -76,7 +76,8 @@ Check the `home` object’s field names; if they differ, adjust the `pick([...])
 
 ### 3. Connect TRMNL
 1. TRMNL dashboard → **Plugins → Private Plugin**, strategy **Polling**.
-2. URL = your Worker root (`https://<your-worker>/`).
+2. URL = `https://<your-worker>/?key=<EXPORT_KEY>` (the display is key-gated by default; set
+   `PUBLIC_DISPLAY="true"` if you'd rather expose `/` without a key).
 3. Paste [`trmnl-markup.liquid`](trmnl-markup.liquid) into the **Markup** editor; tune in the live preview.
 4. Refresh rate 15–30 min.
 
@@ -158,6 +159,19 @@ Three layers, all fed by what the exporter writes:
 cd exporter
 python export.py --days 90 --health-only      # last 90 days of Health/<date>.md
 ```
+
+## Security
+This holds personal health data (heart rate, sleep, etc.), so the pipeline is locked down:
+- **Every route except the OAuth callback requires `EXPORT_KEY`** (constant-time compare). `/` is
+  key-gated too — put `?key=…` in the TRMNL polling URL, or set `PUBLIC_DISPLAY="true"` to open it.
+- **OAuth `/connect` is key-gated** and issues a one-time, KV-stored `state` that `/callback` must
+  present, so no one can silently link or hijack a data source.
+- Caller-supplied **dates are validated** (`YYYY-MM-DD`) before touching KV keys or upstream URLs;
+  **Samsung ingest** is allowlisted to numeric fields and size-capped, so nothing arbitrary reaches your vault.
+- The display `/` is served from a short server-side cache, so polling can't amplify calls to your
+  providers; unhandled errors return a generic message (no internals leaked).
+- Secrets (`API_TOKEN`, `EXPORT_KEY`, client secrets, OAuth tokens) live in Cloudflare secrets/KV,
+  never in code. Use an `https://` `worker_url` so `EXPORT_KEY` is never sent in cleartext.
 
 ## Credits
 Forked from [Jay9185/TRMNL-ULTRAHUMAN](https://github.com/Jay9185/TRMNL-ULTRAHUMAN). MIT licensed.

@@ -11,7 +11,7 @@ import { normalize as polarNormalize } from '../src/sources/polar.js';
 import { normalize as samsungNormalize } from '../src/sources/samsung.js';
 import { buildUnified } from '../src/aggregate.js';
 import { buildDisplay } from '../src/display.js';
-import { weeklyChart, trend, formatDuration } from '../src/lib/util.js';
+import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (f) => JSON.parse(readFileSync(join(here, 'fixtures', f), 'utf8'));
@@ -95,6 +95,15 @@ assert.equal(unified.samsung.connected, true, 'unified samsung attached');
 
 // ===== Helpers + display =====
 assert.equal(formatDuration(27000), '7h 30m', 'formatDuration');
+
+// --- security helpers ---
+assert.equal(isValidDate('2026-05-30'), true, 'valid date accepted');
+assert.equal(isValidDate('2026-13-40'), false, 'impossible date rejected');
+assert.equal(isValidDate('2026-5-3'), false, 'loose format rejected');
+assert.equal(isValidDate('2026-05-30 OR 1=1'), false, 'injection rejected');
+assert.equal(timingSafeEqual('secret', 'secret'), true, 'equal keys match');
+assert.equal(timingSafeEqual('secret', 'secреt'), false, 'different keys differ');
+assert.equal(timingSafeEqual('abc', 'abcd'), false, 'length mismatch rejected');
 const chart = weeklyChart({ '2026-05-30': 8423 }, '2026-05-30', 10000);
 assert.equal(chart.length, 7, 'chart length');
 const display = buildDisplay({ ring, home, chart, hrvTrend: trend(44, 40).icon, lastUpdated: '07:30', homeEnabled: true });

@@ -70,6 +70,22 @@ export function addDays(dateStr, delta) {
   return d.toISOString().split('T')[0];
 }
 
+// Strict YYYY-MM-DD validation (also rejects impossible dates like 2026-13-40).
+// Used to gate any caller-supplied date before it touches KV keys or upstream URLs.
+export function isValidDate(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+// Constant-time string equality — avoids leaking the secret via response timing.
+export function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // 7 bars (Mon..Sun) for the week containing `todayStr`, each = % of step goal (cap 100).
 export function weeklyChart(history, todayStr, stepGoal = 10000) {
   const today = new Date(todayStr + 'T00:00:00Z');

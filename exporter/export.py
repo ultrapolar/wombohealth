@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -376,6 +377,9 @@ def render_block(data: dict) -> str:
 # --------------------------------------------------------------------------- #
 # Upsert into the daily note
 # --------------------------------------------------------------------------- #
+BLOCK_RE = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
+
+
 def insert_after_frontmatter(text: str, block: str) -> str:
     if text.startswith("---"):
         end = text.find("\n---", 3)
@@ -391,16 +395,17 @@ def upsert(note_path: Path, block: str, template_path: Path | None, dry_run: boo
     existing = note_path.read_text(encoding="utf-8") if note_path.exists() else None
     created = existing is None
     if created:
-        if template_path and template_path.exists():
-            existing = template_path.read_text(encoding="utf-8")
-        else:
-            existing = ""
+        existing = template_path.read_text(encoding="utf-8") if (template_path and template_path.exists()) else ""
 
-    if START in existing and END in existing:
-        pre, rest = existing.split(START, 1)
-        _, post = rest.split(END, 1)
-        new_content = pre + block.rstrip("\n") + post
+    blocks = BLOCK_RE.findall(existing)
+    if len(blocks) == 1:
+        # Replace via a function (no regex backref interpretation of block content).
+        new_content = BLOCK_RE.sub(lambda _m: block.rstrip("\n"), existing, count=1)
         action = "updated block"
+    elif len(blocks) > 1:
+        # Corrupt/duplicated markers: strip them all, re-insert one clean block.
+        new_content = insert_after_frontmatter(BLOCK_RE.sub("", existing), block)
+        action = f"normalized {len(blocks)} stray blocks"
     else:
         new_content = insert_after_frontmatter(existing, block)
         action = "created note + inserted block" if created else "inserted block"
@@ -455,9 +460,11 @@ def main() -> int:
     backfill = args.days or int(cfg.get("backfill_days", 3))
     health_folder = "" if args.no_health else (args.health_folder or cfg.get("health_folder", ""))
 
-    if not str(vault):
+    if not (args.vault or cfg.get("vault_path")):
         log.error("No vault_path set (config or --vault).")
         return 2
+    if worker and not args.input and not str(worker).lower().startswith("https://"):
+        log.warning("worker_url is not https:// — your export_key would be sent in cleartext.")
 
     if args.date:
         days = [datetime.strptime(args.date, "%Y-%m-%d").date()]

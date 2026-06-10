@@ -17,6 +17,7 @@ USER_TIMEZONE = "America/New_York"
 USER_TZ_OFFSET = "-4"
 STEP_GOAL = "10000"        # used to scale the weekly step chart
 HOME_ENABLED = "true"      # set "false" if you don't have an Ultrahuman Home
+PUBLIC_DISPLAY = "false"   # "/" requires ?key= by default; set "true" only to expose the display publicly
 
 # Secondary-source OAuth client IDs (leave blank until you register a dev app for each).
 # The matching *_CLIENT_SECRET goes in secrets, not here.

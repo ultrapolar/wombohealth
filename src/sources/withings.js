@@ -1,7 +1,7 @@
 // Withings (Sleep Analyzer etc.) source adapter.
 // OAuth2 is non-standard: token requests need action=requesttoken and responses
 // are wrapped in { status, body }. Sleep data via Sleep v2 getsummary.
-import { loadTokens, saveTokens, isExpired, expiresAt, formEncode } from '../lib/oauth.js';
+import { saveTokens, expiresAt, formEncode, getAccessToken as sharedAccessToken } from '../lib/oauth.js';
 
 export const id = 'withings';
 const AUTH = 'https://account.withings.com/oauth2_user/authorize2';
@@ -54,14 +54,9 @@ export async function exchangeCode(env, code, redirectUri) {
   }));
 }
 
-export async function getAccessToken(env) {
-  let t = await loadTokens(env, id);
-  if (!t) return null;
-  if (isExpired(t)) {
-    t = await tokenRequest(env, { grant_type: 'refresh_token', refresh_token: t.refresh_token });
-    await saveTokens(env, id, t);
-  }
-  return t.access_token;
+export function getAccessToken(env) {
+  return sharedAccessToken(env, id, (rt) =>
+    tokenRequest(env, { grant_type: 'refresh_token', refresh_token: rt }));
 }
 
 const sec2min = (s) => (s != null ? Math.round(s / 60) : null);

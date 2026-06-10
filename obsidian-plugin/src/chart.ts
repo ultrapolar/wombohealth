@@ -34,7 +34,7 @@ function niceNum(range: number, round: boolean): number {
   return nf * Math.pow(10, exp);
 }
 
-export function renderChart(container: HTMLElement, opts: ChartOpts): void {
+export function renderChart(container: HTMLElement, opts: ChartOpts): () => void {
   const height = opts.height ?? 240;
   const canvas = container.createEl("canvas");
   const fmt = opts.fmt ?? ((v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1)));
@@ -220,20 +220,32 @@ export function renderChart(container: HTMLElement, opts: ChartOpts): void {
     }
   };
 
-  canvas.addEventListener("mousemove", (e) => {
+  const onMove = (e: MouseEvent) => {
     const rect = canvas.getBoundingClientRect();
     const rel = e.clientX - rect.left;
     const i = xmap.n <= 1 ? 0 : Math.round(((rel - xmap.padL) / xmap.plotW) * (xmap.n - 1));
     const clamped = Math.max(0, Math.min(xmap.n - 1, i));
     if (clamped !== hoverIdx) { hoverIdx = clamped; draw(); }
-  });
-  canvas.addEventListener("mouseleave", () => { hoverIdx = -1; draw(); });
+  };
+  const onLeave = () => { hoverIdx = -1; draw(); };
+  canvas.addEventListener("mousemove", onMove);
+  canvas.addEventListener("mouseleave", onLeave);
 
   draw();
+
+  let ro: ResizeObserver | undefined;
   try {
-    const ro = new ResizeObserver(() => draw());
+    ro = new ResizeObserver(() => draw());
     ro.observe(container);
   } catch {
     /* ResizeObserver unavailable — static render is fine */
   }
+
+  // Cleanup — call before discarding the chart so observers/listeners don't leak
+  // across re-renders (tab switches, slider drags).
+  return () => {
+    ro?.disconnect();
+    canvas.removeEventListener("mousemove", onMove);
+    canvas.removeEventListener("mouseleave", onLeave);
+  };
 }

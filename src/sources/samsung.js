@@ -31,6 +31,34 @@ export async function getDay(env, date) {
   return normalize(raw);
 }
 
+// Allowlist of accepted numeric fields per group. Anything else is dropped, so a
+// pushed payload can never inject markup/YAML into the vault downstream.
+const NUM_FIELDS = {
+  sleep: ['score', 'duration_min', 'deep_min', 'rem_min', 'light_min', 'awake_min'],
+  activity: ['steps', 'active_min', 'calories', 'distance_m'],
+  vitals: ['rhr', 'spo2', 'hrv', 'breathing_rate'],
+};
+
+function num(v) {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function sanitize(body) {
+  const out = {};
+  for (const [group, keys] of Object.entries(NUM_FIELDS)) {
+    const src = body?.[group];
+    if (!src || typeof src !== 'object') continue;
+    const clean = {};
+    for (const k of keys) {
+      const n = num(src[k]);
+      if (n !== undefined) clean[k] = n;
+    }
+    if (Object.keys(clean).length) out[group] = clean;
+  }
+  return out;
+}
+
 export async function ingest(env, date, body) {
-  await env.KV_STORE.put(`samsung_${date}`, JSON.stringify(body));
+  await env.KV_STORE.put(`samsung_${date}`, JSON.stringify(sanitize(body)));
 }

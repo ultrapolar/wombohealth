@@ -5,7 +5,7 @@
 // save() callback; every interaction re-renders from the current Prefs.
 import { App } from "obsidian";
 import {
-  DEVICES, DEVICE_LABEL, DEVICE_COLOR, METRICS, GROUPS, Device, Prefs, WeightMode,
+  DEVICES, DEVICE_LABEL, DEVICE_COLOR, METRICS, GROUPS, Device, Prefs, WeightMode, DayRow,
   loadHealthData, filterRange, buildMetricSeries,
 } from "./data";
 import { renderChart } from "./chart";
@@ -39,12 +39,29 @@ export function renderDashboard(
   prefs: Prefs,
   save: () => Promise<void>,
   groupsFilter?: string[],
+  forceReload = false,
 ): void {
   const rerender = () => renderDashboard(app, root, prefs, save, groupsFilter);
   root.empty();
   root.addClass("thd-root");
 
-  const rowsAll = loadHealthData(app, prefs.folder);
+  // Tear down charts from the previous render so observers/listeners don't leak.
+  const rootAny = root as unknown as {
+    _thdDisposers?: Array<() => void>;
+    _thdCache?: { folder: string; rows: DayRow[] };
+  };
+  (rootAny._thdDisposers || []).forEach((fn) => fn());
+  const disposers: Array<() => void> = [];
+  rootAny._thdDisposers = disposers;
+
+  // Cache the parsed Health/ rows so tab/slider/tier interactions don't re-scan the vault.
+  let rowsAll: DayRow[];
+  if (!forceReload && rootAny._thdCache && rootAny._thdCache.folder === prefs.folder) {
+    rowsAll = rootAny._thdCache.rows;
+  } else {
+    rowsAll = loadHealthData(app, prefs.folder);
+    rootAny._thdCache = { folder: prefs.folder, rows: rowsAll };
+  }
   const rows = filterRange(rowsAll, prefs.rangeDays);
   const accent = cssAccent(root);
   const groups = groupsFilter && groupsFilter.length ? groupsFilter : GROUPS;
@@ -64,6 +81,9 @@ export function renderDashboard(
     const b = modeSeg.createEl("button", { text: lbl, cls: "thd-segbtn" + (prefs.weightMode === mode ? " active" : "") });
     b.onclick = async () => { prefs.weightMode = mode; await save(); rerender(); };
   });
+
+  const refreshBtn = controls.createEl("button", { text: "↻", cls: "thd-segbtn", attr: { "aria-label": "Reload data from disk" } });
+  refreshBtn.onclick = () => renderDashboard(app, root, prefs, save, groupsFilter, true);
 
   if (prefs.weightMode === "custom") {
     const sliders = controls.createDiv("thd-weights");
@@ -119,14 +139,14 @@ export function renderDashboard(
         width: 1,
         dashed: true,
       }));
-      renderChart(chartEl, {
+      disposers.push(renderChart(chartEl, {
         dates: series.dates,
         series: [...faint, { name: "Weighted mean", color: accent, points: series.combined.mean, width: 3 }],
         band: { lower: series.combined.lower, upper: series.combined.upper, color: accent },
         whiskers: { min: series.combined.min, max: series.combined.max, color: accent },
         unit: m.unit,
         fmt: m.fmt,
-      });
+      }));
       legend(card, [
         ...series.perDevice.map((pd) => ({ label: DEVICE_LABEL[pd.device], color: DEVICE_COLOR[pd.device] })),
         { label: "weighted mean ± SD / min–max", color: accent },
@@ -144,12 +164,12 @@ export function renderDashboard(
       const card = content.createDiv("thd-metric");
       card.createDiv("thd-mtitle").setText(m.label);
       const chartEl = card.createDiv("thd-chart");
-      renderChart(chartEl, {
+      disposers.push(renderChart(chartEl, {
         dates: rows.map((r) => r.date),
         series: [{ name: DEVICE_LABEL[dev], color: DEVICE_COLOR[dev], points, width: 2 }],
         unit: m.unit,
         fmt: m.fmt,
-      });
+      }));
     }
   }
 }
