@@ -38,6 +38,7 @@ export default class HealthDashboardPlugin extends Plugin {
     // Make sure nested records have all keys even if the saved blob is older.
     this.prefs.deviceWeights = Object.assign(d.deviceWeights, this.prefs.deviceWeights || {});
     this.prefs.tiers = Object.assign(d.tiers, this.prefs.tiers || {});
+    this.prefs.metricWeights = this.prefs.metricWeights || {};
 
     this.registerMarkdownCodeBlockProcessor("health-dashboard", (source, el) => {
       const over = parseConfig(source);

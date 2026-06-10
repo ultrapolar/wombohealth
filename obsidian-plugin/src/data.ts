@@ -4,7 +4,7 @@
 // the per-device lines plus the weighted holistic blend (mean, ±SD band, min/max)
 // computed from the user's per-graph tier and weighting preferences.
 import { App } from "obsidian";
-import { weightedMean, weightedStd, minMax, tierWeight, Weighted } from "./stats";
+import { weightedMean, weightedStd, minMax, resolveWeight, Weighted } from "./stats";
 
 export const DEVICES = ["ultrahuman", "withings", "fitbit", "polar", "samsung"] as const;
 export type Device = (typeof DEVICES)[number];
@@ -89,6 +89,9 @@ export interface Prefs {
   weightMode: WeightMode;
   deviceWeights: Record<Device, number>; // used in "custom" mode
   tiers: Record<string, Device[]>; // per metric: ordered list of included devices (top = priority 1)
+  // Per-metric, per-device weight overrides (relative; auto-normalized). When set for a
+  // metric they take precedence over weightMode — e.g. steps: {fitbit:40, polar:40, ultrahuman:10}.
+  metricWeights: Record<string, Partial<Record<Device, number>>>;
   _activeTab?: string;
 }
 
@@ -97,7 +100,7 @@ export function defaultPrefs(): Prefs {
   for (const m of METRICS) tiers[m.key] = [...DEVICES];
   const deviceWeights = {} as Record<Device, number>;
   for (const d of DEVICES) deviceWeights[d] = 1;
-  return { folder: "Health", rangeDays: 60, weightMode: "tier", deviceWeights, tiers };
+  return { folder: "Health", rangeDays: 60, weightMode: "tier", deviceWeights, tiers, metricWeights: {} };
 }
 
 // Devices that have at least one reading for `metricKey`, ordered by the tier list.
@@ -126,10 +129,22 @@ export interface MetricSeries {
   };
 }
 
-function weightFor(device: Device, rank: number, count: number, prefs: Prefs): number {
-  if (prefs.weightMode === "equal") return 1;
-  if (prefs.weightMode === "custom") return prefs.deviceWeights[device] ?? 1;
-  return tierWeight(rank, count); // "tier"
+export function weightFor(device: Device, metricKey: string, rank: number, count: number, prefs: Prefs): number {
+  return resolveWeight({
+    override: prefs.metricWeights?.[metricKey]?.[device],
+    mode: prefs.weightMode,
+    rank,
+    count,
+    customWeight: prefs.deviceWeights[device],
+  });
+}
+
+// Normalized blend percentages for display (e.g. "Fitbit 44% · Polar 44% · UH 11%").
+export function effectiveWeights(metricKey: string, devices: Device[], prefs: Prefs): { device: Device; pct: number }[] {
+  const raw = devices.map((d, i) => ({ device: d, w: weightFor(d, metricKey, i, devices.length, prefs) }));
+  const sum = raw.reduce((a, b) => a + b.w, 0);
+  if (sum <= 0) return raw.map((r) => ({ device: r.device, pct: 0 }));
+  return raw.map((r) => ({ device: r.device, pct: Math.round((r.w / sum) * 100) }));
 }
 
 export function buildMetricSeries(metric: MetricDef, rows: DayRow[], prefs: Prefs): MetricSeries {
@@ -157,8 +172,8 @@ export function buildMetricSeries(metric: MetricDef, rows: DayRow[], prefs: Pref
     devices.forEach((d, i) => {
       const v = r.values[`${d}_${metric.key}`];
       if (typeof v === "number") {
-        items.push({ value: v, weight: weightFor(d, i, devices.length, prefs) });
-        raw.push(v);
+        items.push({ value: v, weight: weightFor(d, metric.key, i, devices.length, prefs) });
+        raw.push(v); // raw spread keeps weight-0 devices, so whiskers show full disagreement
       }
     });
     const m = weightedMean(items);

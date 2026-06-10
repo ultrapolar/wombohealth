@@ -34,3 +34,21 @@ export function minMax(values: number[]): { min: number; max: number } | null {
 export function tierWeight(rank: number, count: number): number {
   return Math.max(1, count - rank);
 }
+
+// Resolve one device's weight for one metric. A per-metric override (user-entered,
+// e.g. "steps: Fitbit 40 / Polar 40 / UH 10") always wins over the global mode;
+// override 0 keeps the device visible (whiskers/faint line) but out of the blend.
+export function resolveWeight(opts: {
+  override?: number;
+  mode: "tier" | "equal" | "custom";
+  rank: number;
+  count: number;
+  customWeight?: number;
+}): number {
+  if (typeof opts.override === "number" && Number.isFinite(opts.override) && opts.override >= 0) {
+    return opts.override;
+  }
+  if (opts.mode === "equal") return 1;
+  if (opts.mode === "custom") return opts.customWeight ?? 1;
+  return tierWeight(opts.rank, opts.count);
+}

@@ -6,7 +6,7 @@
 import { App } from "obsidian";
 import {
   DEVICES, DEVICE_LABEL, DEVICE_COLOR, METRICS, GROUPS, Device, Prefs, WeightMode, DayRow,
-  loadHealthData, filterRange, buildMetricSeries,
+  loadHealthData, filterRange, buildMetricSeries, weightFor, effectiveWeights,
 } from "./data";
 import { renderChart } from "./chart";
 
@@ -183,17 +183,36 @@ function tierControls(
   rerender: () => void,
 ): void {
   const wrap = parent.createDiv("thd-tier");
-  wrap.createSpan({ text: "Priority for this graph:", cls: "thd-tierlabel" });
+  wrap.createSpan({ text: "Sources & weights:", cls: "thd-tierlabel" });
 
   if (!prefs.tiers[metricKey]) prefs.tiers[metricKey] = [...DEVICES];
+  if (!prefs.metricWeights) prefs.metricWeights = {};
   const tier = prefs.tiers[metricKey];
   const included = tier.filter((d) => presentDevices.includes(d));
   const excluded = presentDevices.filter((d) => !included.includes(d));
+  const overrides = prefs.metricWeights[metricKey] || {};
+  const hasOverrides = included.some((d) => typeof overrides[d] === "number");
 
   included.forEach((d, idx) => {
     const chip = wrap.createSpan({ cls: "thd-chip" });
     chip.style.borderLeftColor = DEVICE_COLOR[d];
     chip.createSpan({ text: `${idx + 1}. ${DEVICE_LABEL[d]}` });
+
+    // Per-metric weight (relative; auto-normalized). 0 = visible but out of the blend.
+    const current = weightFor(d, metricKey, idx, included.length, prefs);
+    const winp = chip.createEl("input", {
+      cls: "thd-weightinput",
+      attr: { type: "number", min: "0", max: "100", step: "5", value: String(current), "aria-label": `${DEVICE_LABEL[d]} weight` },
+    });
+    winp.addEventListener("change", async () => {
+      const v = parseFloat(winp.value);
+      if (!Number.isFinite(v) || v < 0) return;
+      if (!prefs.metricWeights[metricKey]) prefs.metricWeights[metricKey] = {};
+      prefs.metricWeights[metricKey][d] = v;
+      await save();
+      rerender();
+    });
+
     const up = chip.createEl("button", { text: "↑", cls: "thd-chipbtn" });
     up.onclick = async () => { move(tier, d, -1); await save(); rerender(); };
     const dn = chip.createEl("button", { text: "↓", cls: "thd-chipbtn" });
@@ -211,4 +230,20 @@ function tierControls(
       rerender();
     };
   });
+
+  if (hasOverrides) {
+    const reset = wrap.createEl("button", { text: "reset weights", cls: "thd-chipbtn thd-reset" });
+    reset.onclick = async () => { delete prefs.metricWeights[metricKey]; await save(); rerender(); };
+  }
+
+  // Effective blend after normalization — what the weighted-mean line actually uses.
+  if (included.length) {
+    const blend = effectiveWeights(metricKey, included, prefs);
+    const line = parent.createDiv("thd-blend");
+    line.createSpan({ text: "Blend: " });
+    blend.forEach(({ device, pct }, i) => {
+      const s = line.createSpan({ text: `${DEVICE_LABEL[device]} ${pct}%${i < blend.length - 1 ? " · " : ""}` });
+      s.style.color = pct === 0 ? "var(--text-faint)" : DEVICE_COLOR[device];
+    });
+  }
 }
