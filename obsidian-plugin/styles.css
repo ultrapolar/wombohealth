@@ -39,3 +39,8 @@
 .thd-blend { margin-top: 4px; font-size: 11px; color: var(--text-muted); }
 
 .thd-empty { color: var(--text-muted); padding: 16px; }
+.thd-empty pre { margin: 8px 0; padding: 8px 10px; background: var(--background-secondary); border-radius: 6px; font-size: 12px; }
+
+.thd-htable { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 4px; }
+.thd-htable th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 3px 10px 3px 0; border-bottom: 1px solid var(--background-modifier-border); }
+.thd-htable td { padding: 3px 10px 3px 0; border-bottom: 1px solid var(--background-modifier-border-hover, var(--background-modifier-border)); }

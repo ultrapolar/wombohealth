@@ -9,6 +9,7 @@ A multi-source health dashboard that renders inside an Obsidian note from the
 - **Per-metric custom weights** — each chip has a weight box; type relative weights (auto-normalized) to control the blend for *that metric only*, e.g. steps: Fitbit 40 / Polar 40 / Ultrahuman 10. Weight **0** keeps a device visible (faint line + whiskers) but removes it from the blend. A "Blend:" line shows the effective percentages; "reset weights" reverts the metric to the global mode. Per-metric weights always override the global Tier/Equal/Custom mode.
 - **Holistic graph** — a weighted-mean line across devices with a **±1 SD shaded band** and **min/max whiskers**, so you see both the blended value and how much your devices disagree each day.
 - **Weighting modes** — *Tier* (top-priority device counts most), *Equal*, or *Custom* (per-device sliders).
+- **Habits tab** — log healthy habits (supplements, meditation, intentional walks, …) in your daily notes' frontmatter and the dashboard correlates each habit against your blended metrics: average with vs. without the habit, % difference, and a point-biserial/Pearson r — direction-aware coloring (a habit that *lowers* resting HR shows green) and a smart day-lag (sleep/HRV compare against the *next morning's* reading).
 - Dependency-free canvas charts (theme-aware, hover tooltips). Metrics: Sleep (duration, stages, score), Heart (HRV, resting HR), Activity (steps, active minutes).
 
 ## Data requirement
@@ -43,6 +44,42 @@ groups: Sleep, Heart, Activity
 ```
 ````
 Range, weighting mode, custom weights, and per-graph tiers are also editable live in the dashboard and persist in plugin settings.
+
+## Habits & correlations
+Log habits as frontmatter in any note that resolves to a day — daily notes work as-is
+(date from the filename, `YYYY-MM-DD` or `YY-MM-DD`, or a `date:` field):
+
+```yaml
+---
+habit_supplements: true
+habit_meditation: true
+habit_walk_min: 25        # quantities work too — correlated as a continuous value
+# or the list form (each entry = done):
+habits: [supplements, meditation, walk]
+---
+```
+
+The **Habits** tab then shows, per habit, every metric's average on habit days vs.
+the rest, the % difference, and the correlation r over the selected date range —
+computed against the same weighted multi-device blend the Combined tab plots.
+
+Details that matter for honest numbers:
+- **Observed days only.** A day counts only if it has *some* habit entry; days you
+  didn't log anything are skipped, not assumed habit-free. On rest days log an empty
+  `habits: []` (or `habit_x: false`) so "without" days exist.
+- **Day lag.** *Smart* (default) compares sleep/heart metrics against the **next
+  morning's** reading — tonight's sleep reflects today's habits — and activity
+  against the same day. Force *Same day* or *Next morning* with the toggle.
+- **Gating.** A metric row needs 5+ overlapping days, and r/Δ% need 3+ days on each
+  side of the split, before anything is reported.
+- **Direction-aware coloring.** Green means "lines up with this metric improving"
+  (higher HRV, lower resting HR), red the opposite. Correlation still isn't causation.
+
+Settings: **Habits folder** (default: whole vault — point it at your daily-notes
+folder to keep the scan tight) and **Habit key prefix** (default `habit_`).
+
+Don't put habit keys in the exporter-written `Health/<date>.md` files — those are
+regenerated on every sync and your edits would be overwritten.
 
 ## How the holistic graph is computed
 For each day and metric: collect every included device's reading, weight them

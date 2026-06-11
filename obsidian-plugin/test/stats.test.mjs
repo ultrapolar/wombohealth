@@ -46,3 +46,65 @@ const zeroed = weightedMean([{ value: 9120, weight: 40 }, { value: 9050, weight:
 assert.ok(zeroed !== null && Math.abs(zeroed - 9085) < 0.5, `weight 0 fully drops UH from blend, got ${zeroed}`);
 
 console.log("PASS: stats math OK");
+
+// --- habit correlation math ---
+import { pearson, habitEffect, shiftDate, alignPairs } from "./stats.bundle.mjs";
+
+assert.equal(shiftDate("2026-06-11", 1), "2026-06-12", "shiftDate +1");
+assert.equal(shiftDate("2026-12-31", 1), "2027-01-01", "shiftDate year rollover");
+assert.equal(shiftDate("2024-02-28", 1), "2024-02-29", "shiftDate leap day");
+assert.equal(shiftDate("2026-06-11", 0), "2026-06-11", "shiftDate zero");
+
+// Perfectly correlated quantity habit (more meditation minutes -> more HRV).
+const pos = [
+  { x: 0, y: 40 }, { x: 10, y: 45 }, { x: 20, y: 50 }, { x: 30, y: 55 },
+];
+const rp = pearson(pos);
+assert.ok(rp !== null && Math.abs(rp - 1) < 1e-9, `perfect positive r, got ${rp}`);
+
+const neg = pos.map((p) => ({ x: p.x, y: -p.y }));
+const rn = pearson(neg);
+assert.ok(rn !== null && Math.abs(rn + 1) < 1e-9, `perfect negative r, got ${rn}`);
+
+assert.equal(pearson([{ x: 1, y: 2 }, { x: 2, y: 3 }]), null, "pearson needs >= 3 pairs");
+assert.equal(pearson([{ x: 1, y: 2 }, { x: 1, y: 3 }, { x: 1, y: 4 }]), null, "no x variance -> null");
+
+// Binary habit: HRV averages 50 on habit days, 42 otherwise.
+const habitDays = [
+  { x: 1, y: 50 }, { x: 1, y: 52 }, { x: 1, y: 48 },
+  { x: 0, y: 42 }, { x: 0, y: 40 }, { x: 0, y: 44 },
+];
+const eff = habitEffect(habitDays);
+assert.equal(eff.n, 6, "habitEffect n");
+assert.equal(eff.doneN, 3, "habitEffect doneN");
+assert.equal(eff.restN, 3, "habitEffect restN");
+assert.ok(Math.abs(eff.doneMean - 50) < 1e-9, `doneMean 50, got ${eff.doneMean}`);
+assert.ok(Math.abs(eff.restMean - 42) < 1e-9, `restMean 42, got ${eff.restMean}`);
+assert.ok(eff.r !== null && eff.r > 0.8, `binary habit r should be strongly positive, got ${eff.r}`);
+assert.ok(Math.abs(eff.diffPct - (8 / 42) * 100) < 0.01, `diffPct ~19%, got ${eff.diffPct}`);
+
+// Lopsided split: habit done all but once -> means still report, r/diff gated off.
+const lop = habitEffect([
+  { x: 1, y: 50 }, { x: 1, y: 51 }, { x: 1, y: 49 }, { x: 1, y: 52 }, { x: 0, y: 41 },
+]);
+assert.equal(lop.r, null, "lopsided split -> r gated");
+assert.equal(lop.diffPct, null, "lopsided split -> diffPct gated");
+assert.ok(lop.doneMean !== null && lop.restMean !== null, "means still report");
+
+// alignPairs: lag 1 pairs the habit with the NEXT day's metric; missing days drop out.
+const hd = [
+  { date: "2026-06-01", values: { walk: 1 } },
+  { date: "2026-06-02", values: {} },          // observed day, habit not done -> x=0
+  { date: "2026-06-03", values: { walk: 1 } }, // next day missing from metrics -> dropped
+];
+const metric = new Map([
+  ["2026-06-01", 40], ["2026-06-02", 48], ["2026-06-03", 41],
+]);
+assert.deepEqual(alignPairs(hd, metric, "walk", 1), [
+  { x: 1, y: 48 }, { x: 0, y: 41 },
+], "lag-1 alignment");
+assert.deepEqual(alignPairs(hd, metric, "walk", 0), [
+  { x: 1, y: 40 }, { x: 0, y: 48 }, { x: 1, y: 41 },
+], "same-day alignment");
+
+console.log("PASS: habit correlation math OK");

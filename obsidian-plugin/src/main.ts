@@ -104,5 +104,27 @@ class HealthDashboardSettingTab extends PluginSettingTab {
             await this.plugin.saveData(this.plugin.prefs);
           }),
       );
+
+    new Setting(containerEl).setName("Habits").setHeading();
+
+    new Setting(containerEl)
+      .setName("Habits folder")
+      .setDesc("Folder of notes whose frontmatter holds habit logs (e.g. your daily-notes folder). Leave empty to scan the whole vault.")
+      .addText((t) =>
+        t.setPlaceholder("Notes/Daily Notes").setValue(this.plugin.prefs.habitsFolder).onChange(async (v) => {
+          this.plugin.prefs.habitsFolder = v.trim().replace(/\/+$/, "");
+          await this.plugin.saveData(this.plugin.prefs);
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("Habit key prefix")
+      .setDesc('Frontmatter keys starting with this are habits: "habit_meditation: true" → Meditation. A "habits: [walk, …]" list works too.')
+      .addText((t) =>
+        t.setValue(this.plugin.prefs.habitPrefix).onChange(async (v) => {
+          this.plugin.prefs.habitPrefix = v.trim() || "habit_";
+          await this.plugin.saveData(this.plugin.prefs);
+        }),
+      );
   }
 }

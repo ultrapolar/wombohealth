@@ -41,7 +41,7 @@ exporter/
 test/
   run.mjs               # offline worker-logic test (node test/run.mjs)
   fixtures/             # sample API + unified payloads
-obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
+obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend, habit correlations)
 ```
 
 ## Setup
@@ -173,6 +173,13 @@ Three layers, all fed by what the exporter writes:
    **tiering**, and a **weighted holistic graph** with a ±1 SD band + min/max whiskers. Build with
    `npm install && npm run build`, then copy `main.js`/`manifest.json`/`styles.css` into
    `<vault>/.obsidian/plugins/trmnl-health-dashboard/` and add a ` ```health-dashboard ``` ` block.
+
+**Healthy habits → correlations.** Log habits by hand in your daily notes' frontmatter
+(`habit_supplements: true`, `habit_walk_min: 25`, or `habits: [meditation, walk]`) and the
+dashboard plugin's **Habits tab** correlates each one against the blended metrics — average
+HRV/sleep/RHR on habit days vs. the rest, % difference, and Pearson r, with sleep metrics
+lagged to the next morning so tonight's sleep is credited to today's habits. See
+[`obsidian-plugin/README.md`](obsidian-plugin/README.md#habits--correlations).
 
 **Backfill history** to populate the charts (writes only `Health/` files, leaves your journal alone):
 ```bash

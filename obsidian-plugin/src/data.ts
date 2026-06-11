@@ -31,6 +31,9 @@ export interface MetricDef {
   group: string;
   unit: string;
   fmt?: (v: number) => string;
+  // Which direction is an improvement — lets the Habits tab color a correlation
+  // as favorable/unfavorable (a habit that *lowers* resting HR is a good thing).
+  better: "high" | "low";
 }
 
 const hm = (min: number) => `${Math.floor(min / 60)}h ${String(Math.round(min % 60)).padStart(2, "0")}m`;
@@ -38,15 +41,15 @@ const hm = (min: number) => `${Math.floor(min / 60)}h ${String(Math.round(min % 
 export const GROUPS = ["Sleep", "Heart", "Activity"];
 
 export const METRICS: MetricDef[] = [
-  { key: "sleep_total_min", label: "Sleep duration", group: "Sleep", unit: "", fmt: hm },
-  { key: "sleep_score", label: "Sleep score", group: "Sleep", unit: "" },
-  { key: "sleep_deep_min", label: "Deep sleep", group: "Sleep", unit: "min" },
-  { key: "sleep_rem_min", label: "REM sleep", group: "Sleep", unit: "min" },
-  { key: "sleep_light_min", label: "Light sleep", group: "Sleep", unit: "min" },
-  { key: "hrv", label: "HRV", group: "Heart", unit: "ms" },
-  { key: "rhr", label: "Resting HR", group: "Heart", unit: "bpm" },
-  { key: "steps", label: "Steps", group: "Activity", unit: "" },
-  { key: "active_min", label: "Active minutes", group: "Activity", unit: "min" },
+  { key: "sleep_total_min", label: "Sleep duration", group: "Sleep", unit: "", fmt: hm, better: "high" },
+  { key: "sleep_score", label: "Sleep score", group: "Sleep", unit: "", better: "high" },
+  { key: "sleep_deep_min", label: "Deep sleep", group: "Sleep", unit: "min", better: "high" },
+  { key: "sleep_rem_min", label: "REM sleep", group: "Sleep", unit: "min", better: "high" },
+  { key: "sleep_light_min", label: "Light sleep", group: "Sleep", unit: "min", better: "high" },
+  { key: "hrv", label: "HRV", group: "Heart", unit: "ms", better: "high" },
+  { key: "rhr", label: "Resting HR", group: "Heart", unit: "bpm", better: "low" },
+  { key: "steps", label: "Steps", group: "Activity", unit: "", better: "high" },
+  { key: "active_min", label: "Active minutes", group: "Activity", unit: "min", better: "high" },
 ];
 
 export interface DayRow {
@@ -83,6 +86,11 @@ export function filterRange(rows: DayRow[], days: number): DayRow[] {
 
 export type WeightMode = "tier" | "equal" | "custom";
 
+// How habit days line up with metric days. "smart" = sleep/heart metrics use the
+// next morning's reading (a habit's effect lands in that night's sleep), activity
+// uses the same day; "same"/"next" force one lag for everything.
+export type HabitLagMode = "smart" | "same" | "next";
+
 export interface Prefs {
   folder: string;
   rangeDays: number; // 0 = all
@@ -92,6 +100,9 @@ export interface Prefs {
   // Per-metric, per-device weight overrides (relative; auto-normalized). When set for a
   // metric they take precedence over weightMode — e.g. steps: {fitbit:40, polar:40, ultrahuman:10}.
   metricWeights: Record<string, Partial<Record<Device, number>>>;
+  habitsFolder: string; // where habit frontmatter lives; "" = whole vault
+  habitPrefix: string; // frontmatter key prefix, default "habit_"
+  habitLagMode: HabitLagMode;
   _activeTab?: string;
 }
 
@@ -100,7 +111,17 @@ export function defaultPrefs(): Prefs {
   for (const m of METRICS) tiers[m.key] = [...DEVICES];
   const deviceWeights = {} as Record<Device, number>;
   for (const d of DEVICES) deviceWeights[d] = 1;
-  return { folder: "Health", rangeDays: 60, weightMode: "tier", deviceWeights, tiers, metricWeights: {} };
+  return {
+    folder: "Health",
+    rangeDays: 60,
+    weightMode: "tier",
+    deviceWeights,
+    tiers,
+    metricWeights: {},
+    habitsFolder: "",
+    habitPrefix: "habit_",
+    habitLagMode: "smart",
+  };
 }
 
 // Devices that have at least one reading for `metricKey`, ordered by the tier list.
