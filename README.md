@@ -8,6 +8,7 @@ Forked from [Jay9185/TRMNL-ULTRAHUMAN](https://github.com/Jay9185/TRMNL-ULTRAHUM
 - Cloudflare Worker is the **single source of truth**: it serves the TRMNL display payload **and** a secured JSON route.
 - A small **Python exporter** writes a non-destructive **Health block + Dataview inline fields** into your daily note each morning.
 - Built around a **source-adapter pattern** so Withings / Fitbit / Polar (and later Samsung) plug in without rewrites.
+- A **Pebble watchapp** ([`pebble/`](pebble/)) shows the same dashboard on your wrist — works with the original watches and the new [Core Devices](https://github.com/coredevices) ones.
 
 ## Architecture
 
@@ -42,6 +43,7 @@ test/
   run.mjs               # offline worker-logic test (node test/run.mjs)
   fixtures/             # sample API + unified payloads
 obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
+pebble/                 # Pebble watchapp: dashboard cards on your wrist (Core Devices SDK)
 ```
 
 ## Setup
@@ -140,6 +142,14 @@ Captured: weight, BMI, body fat %, muscle, body water %, BMR, visceral fat, bone
 metabolic age, protein. Weigh-ins are sparse, so the latest reading is carried forward and
 shown "as of &lt;date&gt;". (Heads-up: it's a reverse-engineered API — it can break when Wyze
 changes auth; a break only stops scale updates, the rest of the pipeline keeps working.)
+
+### 8. Pebble watch (optional)
+A native watchapp in [`pebble/`](pebble/) shows the dashboard as scrollable cards
+(Sleep · Recovery · Activity · Air · Body) on any Pebble, including the new
+[Core Devices](https://github.com/coredevices) Core 2 Duo / Core Time 2. The phone-side JS polls the
+Worker's existing `GET /?key=…` payload, so there's nothing to deploy — build the
+`.pbw`, install it, and enter your Worker URL + export key in the app's settings page.
+See [`pebble/README.md`](pebble/README.md) for build instructions.
 
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached
