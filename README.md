@@ -44,6 +44,7 @@ test/
   fixtures/             # sample API + unified payloads
 obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
 pebble/                 # Pebble watchapp: dashboard cards on your wrist (Core Devices SDK)
+pebble-rambles/         # Pebble watchapp: dictate voice notes into the vault's Rambles folder
 ```
 
 ## Setup
@@ -152,6 +153,15 @@ Heart · Sleep · Air · Body). Works on any Pebble, including the new
 The phone-side JS polls the Worker's existing `GET /?key=…` payload, so there's
 nothing to deploy — build the `.pbw`, install it, and enter your Worker URL +
 export key in the app's settings page. See [`pebble/README.md`](pebble/README.md).
+
+### 9. Dictated notes from the watch (optional)
+[`pebble-rambles/`](pebble-rambles/) is a second watchapp: press a button, talk, and the
+note lands in your vault under `Rambles/YYYY-MM-DD.md`. Starting a note with **"to do"**,
+**"important"**, **"idea"** or **"question"** files it under that section (todos become
+`- [ ]` checkboxes); the keyword is stripped. The Worker stores notes via
+`POST /ingest/ramble` (key-gated, size-capped) and the exporter appends them on its normal
+run — or schedule `python export.py --rambles-only` every 15 min for near-real-time sync.
+Set `rambles_folder` in `exporter/config.toml`. See [`pebble-rambles/README.md`](pebble-rambles/README.md).
 
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached

@@ -11,6 +11,7 @@ import { normalize as polarNormalize } from '../src/sources/polar.js';
 import { normalize as samsungNormalize } from '../src/sources/samsung.js';
 import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
 import { buildUnified } from '../src/aggregate.js';
+import { routeRamble } from '../src/rambles.js';
 import { buildDisplay } from '../src/display.js';
 import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
 
@@ -146,6 +147,26 @@ const dispBody = buildDisplay({
 assert.equal(dispBody.body.weight, '78.2kg', 'display body weight');
 assert.equal(dispBody.body.body_fat, '18.4%', 'display body fat');
 assert.equal(dispBody.body.stale, true, 'display body carried-forward flag');
+
+// --- Rambles keyword routing ---
+const r1 = routeRamble('To do buy oat milk');
+assert.equal(r1.category, 'todo', 'todo keyword routed');
+assert.equal(r1.text, 'buy oat milk', 'todo keyword stripped');
+const r2 = routeRamble('Important, call mom tomorrow');
+assert.equal(r2.category, 'important', 'important keyword routed');
+assert.equal(r2.text, 'call mom tomorrow', 'important keyword + punctuation stripped');
+const r3 = routeRamble('just walked past the bakery again');
+assert.equal(r3.category, 'ramble', 'no keyword -> ramble');
+assert.equal(r3.text, 'just walked past the bakery again', 'ramble text untouched');
+const r4 = routeRamble('idea: pebble app that waters plants');
+assert.equal(r4.category, 'idea', 'idea keyword routed');
+assert.equal(r4.text, 'pebble app that waters plants', 'idea colon stripped');
+const r5 = routeRamble('to do get eggs', 'important');
+assert.equal(r5.category, 'important', 'explicit category override wins');
+assert.equal(r5.text, 'get eggs', 'keyword still stripped on override');
+assert.equal(routeRamble('todo'), null, 'keyword-only note rejected');
+assert.equal(routeRamble('   '), null, 'blank note rejected');
+assert.equal(routeRamble('todoist sounds nice').category, 'ramble', 'keyword must be a whole word');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

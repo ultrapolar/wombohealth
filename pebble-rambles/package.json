@@ -1,0 +1,40 @@
+{
+  "name": "rambles",
+  "author": "ultrapolar",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Rambles",
+    "uuid": "54919120-004b-4cc3-b413-e82091d1f3a3",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "capabilities": ["configurable"],
+    "targetPlatforms": [
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "TEXT",
+      "CATEGORY",
+      "TS",
+      "RESULT",
+      "ERROR",
+      "workerUrl",
+      "exportKey"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}
