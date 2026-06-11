@@ -144,12 +144,14 @@ shown "as of &lt;date&gt;". (Heads-up: it's a reverse-engineered API — it can 
 changes auth; a break only stops scale updates, the rest of the pipeline keeps working.)
 
 ### 8. Pebble watch (optional)
-A native watchapp in [`pebble/`](pebble/) shows the dashboard as scrollable cards
-(Sleep · Recovery · Activity · Air · Body) on any Pebble, including the new
-[Core Devices](https://github.com/coredevices) Core 2 Duo / Core Time 2. The phone-side JS polls the
-Worker's existing `GET /?key=…` payload, so there's nothing to deploy — build the
-`.pbw`, install it, and enter your Worker URL + export key in the app's settings page.
-See [`pebble/README.md`](pebble/README.md) for build instructions.
+A native watchapp in [`pebble/`](pebble/) recreates the built-in PebbleOS Health app —
+same sliding cards and overshoot animations — but fed by this Worker (Activity ·
+Heart · Sleep · Air · Body). Works on any Pebble, including the new
+[Core Devices](https://github.com/coredevices) Core 2 Duo / Core Time 2, and can
+**take over the watchface's UP button** via Settings → Quick Launch → Tap Up.
+The phone-side JS polls the Worker's existing `GET /?key=…` payload, so there's
+nothing to deploy — build the `.pbw`, install it, and enter your Worker URL +
+export key in the app's settings page. See [`pebble/README.md`](pebble/README.md).
 
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached

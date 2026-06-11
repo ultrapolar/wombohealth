@@ -1,27 +1,50 @@
 # Wombo Health — Pebble watchapp
 
-View the trmnl-health dashboard on a Pebble (including the new
-[Core Devices](https://github.com/coredevices) watches — Core 2 Duo / Core Time 2).
+Your trmnl-health dashboard as a clone of PebbleOS's built-in **Health** app —
+same card UI, same navigation, same slide-with-overshoot animations — but fed by
+your Cloudflare Worker (Ultrahuman / Withings / Fitbit / Polar / Wyze) instead
+of the watch's accelerometer. Built for the
+[Core Devices](https://github.com/coredevices) revival (Core 2 Duo / Core Time 2)
+and original Pebbles.
 
-The watch shows scrollable cards fed by your deployed Cloudflare Worker:
+## Taking over the UP button
 
-| Card | Metrics | Shown |
+On Core Devices firmware, a single UP press from the watchface is a
+configurable quick-launch slot (it just defaults to the built-in Health app).
+To make it open Wombo Health instead:
+
+> On the watch: **Settings → Quick Launch → Tap Up → Wombo Health**
+
+Then UP from the watchface drops you straight into your cards, and DOWN from
+the first card slides you back to the watchface — exactly like the system app.
+
+## Cards
+
+| Card | Shows | Visible |
 | --- | --- | --- |
-| Sleep | score, duration, deep, REM, cycles | always |
-| Recovery | recovery score, HRV (+/- trend), RHR, SpO2, skin temp | always |
-| Activity | steps, active minutes, movement index, VO2 max | always |
-| Air | AQI, CO2, PM2.5, temp, humidity, noise | if Ultrahuman Home is enabled |
-| Body | weight, body fat, muscle, water, measured date | if Wyze scale data exists |
+| Activity | progress ring (today vs. step goal) with a yellow "typical" week-average marker, footprint icon, count-up step total | always |
+| Heart | beating heart (lub-dub), resting BPM, HRV box with trend arrow | always |
+| Sleep | crescent moon, time asleep as H:MM, sleep score box | always |
+| Air | cloud, AQI, CO2 box | if Ultrahuman Home is enabled |
+| Body | scale icon, weight, body-fat box | if Wyze scale data exists |
 
-**Buttons:** UP/DOWN switch cards · SELECT re-fetches. The footer shows the
-Worker's last-updated time and a `(stale)` marker when the ring hasn't synced yet.
+**Controls** (mirrors the system Health app):
+- **UP / DOWN** — slide between cards (with the moook-style overshoot bounce);
+  DOWN below the first card exits to the watchface
+- **SELECT** — detail view for the current card (all metrics as rows)
+- **long SELECT** — re-fetch from the Worker
+
+Numbers count up and the ring sweeps in when fresh data lands. The last
+payload is persisted on the watch, so launching shows data instantly (a
+`stale` tag appears top-right when the Worker says the ring hasn't synced).
 
 ## How it works
 
-No Worker changes were needed. The phone-side JS (PebbleKit JS) fetches
-`GET /?key=<EXPORT_KEY>` — the same flat, merged, pre-formatted payload TRMNL
-polls — and forwards the strings to the watch over AppMessage. All
-fallback/stale/merge logic stays in the Worker.
+No Worker changes needed. The phone-side JS (PebbleKit JS) fetches
+`GET /?key=<EXPORT_KEY>` — the same flat, merged payload TRMNL polls — and
+forwards it over AppMessage. The weekly `zone_1..7` bars (each day's % of step
+goal) drive the activity ring: today's bar is the green fill, the average of
+the other days is the yellow "typical" marker.
 
 ## Setup
 
@@ -32,7 +55,7 @@ fallback/stale/merge logic stays in the Worker.
    and enter:
    - **Worker URL** — `https://<your-worker>.workers.dev`
    - **Export key** — the `EXPORT_KEY` secret you set with `wrangler secret put`
-3. Open the app on the watch; it fetches on launch.
+3. Open the app on the watch (or set up Tap Up, above).
 
 ## Building
 
@@ -44,8 +67,13 @@ uv tool install pebble-tool
 pebble sdk install latest
 
 cd pebble
-pebble build           # produces build/pebble.pbw for all 7 platforms
+pebble build           # produces build/pebble.pbw
 ```
+
+With the official SDK (4.4+ from `sdk.repebble.com`) the build also emits
+native `flint`/`gabbro` (Core 2 Duo / Core Time 2) binaries. The Core 2 Duo
+also happily runs the `diorite` build (same display), so a 5-platform `.pbw`
+still installs and works on it.
 
 ### Building with a modern arm-none-eabi-gcc
 
@@ -63,8 +91,13 @@ then `pebble sdk activate 4.4`.
 
 ## Notes
 
+- The card design, colors (green-on-black activity, OxfordBlue sleep, white
+  heart card), slide behavior, and detail-view pattern follow the open-source
+  PebbleOS Health app
+  ([coredevices/PebbleOS](https://github.com/coredevices/PebbleOS),
+  `src/fw/apps/system/health/`, Apache-2.0). The overshoot slide curve
+  approximates the firmware's internal `interpolate_moook_soft`, which isn't
+  exposed by the public SDK.
 - The export key is stored in the phone app's settings (Clay localStorage),
   never on the watch.
-- Steps are comma-grouped on the phone; the HRV trend arrow (▲/▼) is mapped to
-  `+`/`-` since the watch system fonts don't include those glyphs.
 - Missing metrics render as `--`, matching the TRMNL display.

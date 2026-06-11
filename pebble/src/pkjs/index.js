@@ -32,6 +32,39 @@ function trendSuffix(icon) {
   return '';
 }
 
+function trendInt(icon) {
+  if (icon === '▲') return 1;
+  if (icon === '▼') return -1;
+  return 0;
+}
+
+// "7h 02m" -> 422; anything unparseable -> 0
+function durationMin(text) {
+  var m = /(\d+)h\s*(\d+)m/.exec(str(text));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+}
+
+// zone_1..7 are Mon..Sun, each day's steps as % of goal (capped at 100).
+// Today's bar drives the activity ring; the average of the other days with
+// data stands in for the system app's "typical" marker.
+function weekZones(p) {
+  var zones = [];
+  for (var i = 1; i <= 7; i++) zones.push(Number(p['zone_' + i]) || 0);
+  var today = (new Date().getDay() + 6) % 7;
+  var sum = 0;
+  var n = 0;
+  for (var j = 0; j < 7; j++) {
+    if (j !== today && zones[j] > 0) {
+      sum += zones[j];
+      n++;
+    }
+  }
+  return {
+    todayPct: zones[today],
+    typicalPct: n ? Math.round(sum / n) : 0,
+  };
+}
+
 function sendError(msg) {
   Pebble.sendAppMessage({ ERROR: msg }, null, function () {
     console.log('failed to send error to watch');
@@ -68,7 +101,15 @@ function fetchData() {
       return;
     }
     var body = p.body || {};
+    var zones = weekZones(p);
     var dict = {
+      STEPS_NUM: Number(p.steps) || 0,
+      STEPS_PCT: zones.todayPct,
+      TYPICAL_PCT: zones.typicalPct,
+      SLEEP_MIN: durationMin(p.sleep_duration),
+      RHR_NUM: parseInt(p.rhr, 10) || 0,
+      HRV_NUM: parseInt(p.hrv, 10) || 0,
+      HRV_TREND: trendInt(p.hrv_icon),
       SLEEP_SCORE: str(p.sleep_score),
       SLEEP_DURATION: str(p.sleep_duration),
       SLEEP_DEEP: str(p.deep_duration),
