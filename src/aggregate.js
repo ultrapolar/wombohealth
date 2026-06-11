@@ -4,7 +4,7 @@
 
 export function buildUnified({
   date, ring, home, withings = null, fitbit = null, polar = null, samsung = null, wyze = null,
-  trends = {}, stale = false,
+  habits = null, trends = {}, stale = false,
 }) {
   return {
     date,
@@ -59,6 +59,8 @@ export function buildUnified({
     samsung,
     // Wyze body composition — its own category: { connected, carried_forward, measured_date, body }
     wyze,
+    // Healthy habits pushed via /ingest/habits — flat { name: 0|1|quantity } or null.
+    habits,
     trends,
   };
 }

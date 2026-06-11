@@ -103,6 +103,8 @@ export interface Prefs {
   habitsFolder: string; // where habit frontmatter lives; "" = whole vault
   habitPrefix: string; // frontmatter key prefix, default "habit_"
   habitLagMode: HabitLagMode;
+  habitList: string[]; // default set shown in the quick-log modal and the Habits tab
+  dailyNoteFormat: string; // moment format of daily-note filenames, for the quick-log target
   _activeTab?: string;
 }
 
@@ -121,6 +123,8 @@ export function defaultPrefs(): Prefs {
     habitsFolder: "",
     habitPrefix: "habit_",
     habitLagMode: "smart",
+    habitList: ["supplements", "intentional_walk", "meditation"],
+    dailyNoteFormat: "YYYY-MM-DD",
   };
 }
 

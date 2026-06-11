@@ -10,6 +10,7 @@ import { normalize as fitbitNormalize } from '../src/sources/fitbit.js';
 import { normalize as polarNormalize } from '../src/sources/polar.js';
 import { normalize as samsungNormalize } from '../src/sources/samsung.js';
 import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
+import { sanitize as habitsSanitize } from '../src/sources/habits.js';
 import { buildUnified } from '../src/aggregate.js';
 import { buildDisplay } from '../src/display.js';
 import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
@@ -146,6 +147,26 @@ const dispBody = buildDisplay({
 assert.equal(dispBody.body.weight, '78.2kg', 'display body weight');
 assert.equal(dispBody.body.body_fat, '18.4%', 'display body fat');
 assert.equal(dispBody.body.stale, true, 'display body carried-forward flag');
+
+// --- Healthy habits ingest ---
+const hclean = habitsSanitize({
+  done: ['Supplements', 'Intentional Walk'],
+  habits: { meditation: true, walk_min: '25', alcohol: false, '<script>': 1, '': 1, '5am': 1, big: 9e9 },
+});
+assert.equal(hclean.supplements, 1, 'habit done list -> 1');
+assert.equal(hclean.intentional_walk, 1, 'habit name slugged (spaces, case)');
+assert.equal(hclean.meditation, 1, 'habit boolean true -> 1');
+assert.equal(hclean.walk_min, 25, 'habit numeric string coerced');
+assert.equal(hclean.alcohol, 0, 'habit explicit false kept as 0');
+assert.equal(Object.keys(hclean).some((k) => k.includes('<')), false, 'habit markup name dropped');
+assert.equal('5am' in hclean, false, 'habit name must start with a letter');
+assert.equal(hclean.big, 100000, 'habit value clamped');
+assert.equal('' in hclean, false, 'empty habit name dropped');
+
+const uHabits = buildUnified({ date: '2026-05-30', ring, home, habits: { supplements: 1, meditation: 0 } });
+assert.equal(uHabits.habits.supplements, 1, 'unified carries habits');
+assert.equal(uHabits.habits.meditation, 0, 'unified keeps explicit habit 0');
+assert.equal(unified.habits, null, 'habits default to null when not ingested');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

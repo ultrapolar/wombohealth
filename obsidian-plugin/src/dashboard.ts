@@ -8,7 +8,7 @@ import {
   DEVICES, DEVICE_LABEL, DEVICE_COLOR, METRICS, GROUPS, Device, Prefs, WeightMode, HabitLagMode,
   DayRow, MetricDef, loadHealthData, filterRange, buildMetricSeries, weightFor, effectiveWeights,
 } from "./data";
-import { loadHabits, habitLabel } from "./habits";
+import { loadHabits, habitLabel, slugify } from "./habits";
 import { alignPairs, habitEffect } from "./stats";
 import { renderChart } from "./chart";
 
@@ -295,6 +295,7 @@ function renderHabitsTab(
   rerender: () => void,
 ): void {
   const { days, habits } = loadHabits(app, prefs.habitsFolder, prefs.habitPrefix);
+  const allHabits = [...new Set([...habits, ...(prefs.habitList || []).map(slugify).filter(Boolean)])];
   const first = rows[0].date;
   const last = rows[rows.length - 1].date;
   const daysInRange = days.filter((d) => d.date >= first && d.date <= last);
@@ -314,11 +315,11 @@ function renderHabitsTab(
         : "All metrics compare against the same day as the habit.",
   });
 
-  if (!habits.length || !daysInRange.length) {
+  if (!daysInRange.length) {
     const empty = content.createDiv("thd-empty");
     const where = prefs.habitsFolder ? `notes under "${prefs.habitsFolder}/"` : "any note";
     empty.createDiv().setText(
-      `No habit logs found in this date range. Log habits in the frontmatter of ${where} (the note's filename or a "date" field gives the day):`,
+      `No habit logs found in this date range. Run the "Log today's habits" command, or add frontmatter to ${where} by hand (the note's filename or a "date" field gives the day):`,
     );
     empty.createEl("pre", {
       text: [
@@ -349,7 +350,7 @@ function renderHabitsTab(
     meanByMetric.set(m.key, map);
   }
 
-  const byActivity = [...habits].sort((a, b) => {
+  const byActivity = [...allHabits].sort((a, b) => {
     const doneCount = (h: string) => daysInRange.filter((d) => (d.values[h] ?? 0) > 0).length;
     return doneCount(b) - doneCount(a);
   });

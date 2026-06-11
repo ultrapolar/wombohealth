@@ -44,7 +44,7 @@ function habitValue(raw: unknown): number | null {
   return null;
 }
 
-function slugify(name: string): string {
+export function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "_");
 }
 

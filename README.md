@@ -149,6 +149,8 @@ changes auth; a break only stops scale updates, the rest of the pipeline keeps w
 - **GET /status** — which sources are configured/connected (key-gated).
 - **GET /connect/:source** & **/callback/:source** — one-time OAuth linking for Withings/Fitbit/Polar.
 - **POST /ingest/samsung** — accept pushed Samsung metrics (key-gated).
+- **POST /ingest/habits** — log healthy habits from a one-tap phone widget (key-gated;
+  names slugged, values numeric-only, repeat posts merge per-key).
 - **KV** caches each day's ring/home, stores per-source OAuth tokens, and runs a background **audit**
   every 3 days that backfills the last 7 days (powers the weekly step chart and HRV trend arrow).
 
@@ -174,12 +176,32 @@ Three layers, all fed by what the exporter writes:
    `npm install && npm run build`, then copy `main.js`/`manifest.json`/`styles.css` into
    `<vault>/.obsidian/plugins/trmnl-health-dashboard/` and add a ` ```health-dashboard ``` ` block.
 
-**Healthy habits → correlations.** Log habits by hand in your daily notes' frontmatter
-(`habit_supplements: true`, `habit_walk_min: 25`, or `habits: [meditation, walk]`) and the
-dashboard plugin's **Habits tab** correlates each one against the blended metrics — average
-HRV/sleep/RHR on habit days vs. the rest, % difference, and Pearson r, with sleep metrics
-lagged to the next morning so tonight's sleep is credited to today's habits. See
-[`obsidian-plugin/README.md`](obsidian-plugin/README.md#habits--correlations).
+## Healthy habits & correlations
+
+Log healthy habits (supplements, meditation, intentional walks, …) and the dashboard
+plugin's **Habits tab** correlates each one against the blended metrics — average
+HRV/sleep/RHR on habit days vs. the rest, % difference, and Pearson r, with sleep
+metrics lagged to the next morning so tonight's sleep is credited to today's habits.
+Details in [`obsidian-plugin/README.md`](obsidian-plugin/README.md#habits--correlations).
+
+Two logging paths, freely mixed (the plugin merges them per day):
+
+**In Obsidian** — the plugin's *"Log today's habits"* command (toggle modal → daily-note
+frontmatter), or type `habit_meditation: true` / `habits: [supplements, walk]` yourself.
+
+**From your phone** — POST completions to the Worker and they flow through `/json` →
+exporter → `Health/<date>.md` frontmatter automatically:
+```bash
+curl -X POST "https://<your-worker>/ingest/habits" \
+  -H "X-Export-Key: $EXPORT_KEY" -H "Content-Type: application/json" \
+  -d '{"done": ["supplements", "meditation"], "habits": {"walk_min": 25}}'   # date defaults to today
+```
+Make it one tap on Android with [HTTP Shortcuts](https://http-shortcuts.rmy.ch/) (a home-screen
+widget per habit) or a Tasker/MacroDroid task. Names are slugged and values numeric-only on
+ingest, and repeat POSTs merge per-key, so each habit can have its own button. (If you plan your
+day in **Taskito**: it has no public API, webhooks, or automation hooks — its calendar
+integration is import-only — so completions can't be read out of it directly; a one-tap
+widget next to it is the practical bridge.)
 
 **Backfill history** to populate the charts (writes only `Health/` files, leaves your journal alone):
 ```bash

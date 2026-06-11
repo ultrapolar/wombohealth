@@ -59,9 +59,31 @@ habits: [supplements, meditation, walk]
 ---
 ```
 
+Three ways to log:
+1. **"Log today's habits" command** — a quick modal with a toggle per habit in your
+   configured set (defaults: supplements, intentional walk, meditation; edit in
+   settings, or add new ones from the modal). Writes explicit `true`/`false` for
+   every habit into today's daily note, which keeps the "without" days honest.
+2. **By hand** — type the frontmatter yourself, anywhere.
+3. **From your phone** — POST to the Worker's `/ingest/habits` (one-tap widget via
+   HTTP Shortcuts / Tasker); the exporter then writes `habit_*` keys into
+   `Health/<date>.md`, which this plugin picks up automatically. See the
+   [main README](../README.md#healthy-habits--correlations).
+
 The **Habits** tab then shows, per habit, every metric's average on habit days vs.
 the rest, the % difference, and the correlation r over the selected date range —
 computed against the same weighted multi-device blend the Combined tab plots.
+
+Everything is also plain frontmatter/inline fields, so ad-hoc Dataview works too:
+
+````md
+```dataview
+TABLE UH-HRV AS "HRV", UH-Sleep-Score AS "Sleep", habit_meditation AS "Meditated"
+FROM "Notes/Daily Notes"
+WHERE habit_meditation != null
+SORT file.name DESC
+```
+````
 
 Details that matter for honest numbers:
 - **Observed days only.** A day counts only if it has *some* habit entry; days you
@@ -76,7 +98,9 @@ Details that matter for honest numbers:
   (higher HRV, lower resting HR), red the opposite. Correlation still isn't causation.
 
 Settings: **Habits folder** (default: whole vault — point it at your daily-notes
-folder to keep the scan tight) and **Habit key prefix** (default `habit_`).
+folder to keep the scan tight), **Habit key prefix** (default `habit_`), **Habit
+set** (the quick-log toggles), and **Daily note filename format** (moment format,
+e.g. `YY-MM-DD`, so the quick-log command writes to the right note).
 
 Don't put habit keys in the exporter-written `Health/<date>.md` files — those are
 regenerated on every sync and your edits would be overwritten.
