@@ -203,18 +203,32 @@ day in **Taskito**: it has no public API, webhooks, or automation hooks — its 
 integration is import-only — so completions can't be read out of it directly; a one-tap
 widget next to it is the practical bridge.)
 
-**From [Loop Habit Tracker](https://github.com/iSoron/uhabits)** — keep tracking in Loop and
-backfill from its **Export as CSV** ZIP:
-```bash
-python exporter/import_loop.py "Loop Habits CSV 2026-06-12.zip" [--since 2026-03-01] [--dry-run]
-```
-This parses the per-habit `Checkmarks.csv` files (YES_MANUAL → done, NO/YES_AUTO → not done
-that day, SKIP/UNKNOWN omitted; numerical habits are de-scaled from Loop's ×1000 storage) and
-POSTs each day to `/ingest/habits`. Loop's automation API is write-only — Tasker can *check*
-habits in Loop but nothing can read checkmarks out live — so live mirroring isn't possible
-without root; re-run the import every week or two instead. (Bonus: since Loop accepts
-check-ins via Tasker intents, a single widget can mark the habit in Loop *and* POST to the
-Worker in one tap if you want both live.)
+**From [Loop Habit Tracker](https://github.com/iSoron/uhabits)** — keep tracking in Loop;
+`exporter/import_loop.py` understands both of Loop's export formats (CSV ZIP and SQLite
+backup) and POSTs each day to `/ingest/habits`. Value mapping: YES_MANUAL → done,
+NO/YES_AUTO → not done that day, SKIP/UNKNOWN omitted; numerical habits de-scaled from
+Loop's ×1000 storage. Loop's automation API is write-only (Tasker can *check* habits but
+nothing can read checkmarks out live), so the sync is file-based — and fully schedulable:
+
+1. **Loop** → Settings → backups → choose a *backup folder* (e.g. `Documents/LoopBackups`).
+   Loop then keeps a daily `Loop Habits Backup <timestamp>.db` there automatically,
+   refreshed each time you open the app (it retains the 5 newest).
+2. **Sync that folder** to your computer in the background:
+   [Syncthing](https://syncthing.net/) (direct, no cloud) or Autosync/FolderSync via
+   Drive/Dropbox — any of them works, it's just files in a normal folder.
+3. **Schedule the import** next to your existing exporter run — point it at the synced
+   folder and it picks the newest backup by itself:
+   ```bash
+   python exporter/import_loop.py /path/to/LoopBackups/ && python exporter/export.py
+   ```
+   (Windows: add it to the scheduled task from `register-task.ps1`; Linux/macOS: cron.)
+
+End to end: check habits in Loop during the day → open Loop in the morning (refreshes the
+backup) → folder syncs → nightly task imports into the Worker → exporter writes
+`habit_*` into the vault. No taps beyond using Loop normally. The first time, run with no
+`--since` to backfill your whole Loop history, and temporarily raise `backfill_days` in
+`config.toml` (or loop `export.py --date`) so the historical days materialize as
+`Health/<date>.md` files.
 
 **Backfill history** to populate the charts (writes only `Health/` files, leaves your journal alone):
 ```bash

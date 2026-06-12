@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
-"""Backfill healthy habits from a Loop Habit Tracker (uhabits) CSV export.
+"""Backfill healthy habits from a Loop Habit Tracker (uhabits) export.
 
 Loop (org.isoron.uhabits) has no automation API for *reading* checkmarks — its
-Tasker integration is write-only — but its "Export as CSV" produces a ZIP this
-script can mine. Each day's habits are POSTed to the Worker's /ingest/habits
-(merge semantics, server-side sanitization); the regular exporter then writes
-habit_<name> frontmatter into Health/<date>.md, where the dashboard plugin's
-Habits tab and Dataview pick them up.
+Tasker integration is write-only — but two of its own export paths work:
 
-ZIP layout (verified against uhabits source, HabitsCSVExporter.kt @ dev):
-  Habits.csv                        Position,Name,Type(YES_NO|NUMERICAL),...,Unit,...
-  NNN <Habit Name>/Checkmarks.csv   Date,Value,Notes   (Date = YYYY-MM-DD)
-  Checkmarks.csv, Scores.csv        combined files (unquoted header names; ignored)
+  1. SQLite auto-backup (fully automatic, recommended): in Loop's settings pick
+     a public backup folder; Loop then refreshes a daily "Loop Habits Backup
+     <timestamp>.db" there (keeps 5) every time you open the app. Sync that
+     folder to your computer (Syncthing / Autosync / Drive) and point this
+     script at the folder — it picks the newest backup automatically.
+  2. "Export as CSV" ZIP (manual): Settings -> Export as CSV.
+
+Each day's habits are POSTed to the Worker's /ingest/habits (merge semantics,
+server-side sanitization); the regular exporter then writes habit_<name>
+frontmatter into Health/<date>.md, where the dashboard plugin's Habits tab and
+Dataview pick them up.
+
+Formats (verified against uhabits source @ dev):
+  ZIP (HabitsCSVExporter.kt):
+    Habits.csv                        Position,Name,Type(YES_NO|NUMERICAL),...,Unit,...
+    NNN <Habit Name>/Checkmarks.csv   Date,Value,Notes   (Date = YYYY-MM-DD)
+  SQLite (assets/main/migrations/*.sql):
+    Habits(id, name, type, ...) join Repetitions(habit, timestamp, value)
+    timestamp = midnight UTC of the local day, in milliseconds.
 
 Checkmark values (uhabits Entry.kt):
   YES_MANUAL (2) -> 1 (did it)        NO (0)        -> 0 (didn't, was expected)
@@ -22,11 +33,13 @@ NUMERICAL habits store amount*1000 in the entry value; we divide it back out, so
 "Walk (min)" with 25000 becomes habit_walk: 25.
 
 Usage:
-  python import_loop.py "Loop Habits CSV 2026-06-12.zip"          # worker/key from config.toml
-  python import_loop.py backup.zip --since 2026-03-01 --dry-run
+  python import_loop.py /path/to/synced/LoopBackups/                # newest .db in folder
+  python import_loop.py "Loop Habits Backup 2026-06-12.db"
+  python import_loop.py "Loop Habits CSV 2026-06-12.zip" --since 2026-03-01 --dry-run
   python import_loop.py --selftest
 
-No third-party dependencies (stdlib: zipfile, csv, urllib, tomllib).
+Worker URL/key come from config.toml (worker_url/export_key) or --worker/--key.
+No third-party dependencies (stdlib: zipfile, sqlite3, csv, urllib, tomllib).
 """
 from __future__ import annotations
 
@@ -35,10 +48,12 @@ import csv
 import io
 import json
 import re
+import sqlite3
 import sys
 import urllib.error
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -111,6 +126,55 @@ def parse_archive(src) -> dict[str, dict[str, float | int]]:
     return days
 
 
+def parse_db(path) -> dict[str, dict[str, float | int]]:
+    """Loop SQLite backup -> {YYYY-MM-DD: {slug: value}}.
+
+    The Repetitions table holds original (manual) entries only — YES_AUTO is
+    computed at display time and never stored — so absent days simply aren't
+    emitted. Timestamps are midnight UTC of the local day, in ms.
+    """
+    days: dict[str, dict] = {}
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(Habits)")}
+        type_col = "h.type" if "type" in cols else "0"
+        rows = con.execute(
+            f"SELECT h.name, {type_col}, r.timestamp, r.value "
+            "FROM Repetitions r JOIN Habits h ON r.habit = h.id"
+        )
+        for name, htype, ts, value in rows:
+            slug = slugify(name or "")
+            if not slug or ts is None or value is None:
+                continue
+            date = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            if int(htype or 0) == 1:  # NUMERICAL
+                if value == 3 or value < 0:  # SKIP sentinel / invalid
+                    continue
+                v = value // 1000 if value % 1000 == 0 else value / 1000
+            else:
+                v = {2: 1, 1: 0, 0: 0}.get(value)  # SKIP(3)/UNKNOWN omitted
+                if v is None:
+                    continue
+            days.setdefault(date, {})[slug] = v
+    finally:
+        con.close()
+    return days
+
+
+def parse_source(path: str) -> dict[str, dict[str, float | int]]:
+    """Dispatch: directory of auto-backups (newest .db wins), .zip, or .db."""
+    p = Path(path)
+    if p.is_dir():
+        backups = sorted(p.glob("*.db"), key=lambda f: f.stat().st_mtime)
+        if not backups:
+            raise SystemExit(f"no .db backups found in {p}")
+        print(f"using newest backup: {backups[-1].name}")
+        return parse_db(backups[-1])
+    if zipfile.is_zipfile(p):
+        return parse_archive(p)
+    return parse_db(p)
+
+
 def post_days(worker: str, key: str, days: dict, dry_run: bool) -> int:
     failures = 0
     for date in sorted(days):
@@ -167,11 +231,39 @@ def selftest() -> None:
     assert "2026-06-06" not in days, days  # UNKNOWN-only day omitted entirely
     print("PASS: Loop CSV import OK")
 
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dbpath = str(Path(tmpdir) / "Loop Habits Backup 2026-06-12.db")
+        con = sqlite3.connect(dbpath)
+        con.executescript(
+            "CREATE TABLE Habits (id integer primary key, name text, type integer);"
+            "CREATE TABLE Repetitions (id integer primary key, habit integer, "
+            "timestamp integer, value integer);"
+            "INSERT INTO Habits VALUES (1, 'Meditation', 0), (2, 'Walk, intentional', 1);"
+        )
+        day_ms = 86400000
+        d10 = int(datetime(2026, 6, 10, tzinfo=timezone.utc).timestamp() * 1000)
+        con.executemany(
+            "INSERT INTO Repetitions (habit, timestamp, value) VALUES (?, ?, ?)",
+            [(1, d10, 2), (1, d10 - day_ms, 0), (1, d10 - 2 * day_ms, 3),
+             (2, d10, 25000), (2, d10 - day_ms, 0), (2, d10 - 2 * day_ms, 1500)],
+        )
+        con.commit()
+        con.close()
+        days = parse_db(dbpath)
+        assert days["2026-06-10"] == {"meditation": 1, "walk_intentional": 25}, days
+        assert days["2026-06-09"] == {"meditation": 0, "walk_intentional": 0}, days
+        assert days["2026-06-08"] == {"walk_intentional": 1.5}, days  # meditation SKIP omitted
+        # folder dispatch picks the newest .db in an auto-backup directory
+        assert parse_source(tmpdir)["2026-06-10"]["meditation"] == 1
+    print("PASS: Loop SQLite backup import OK")
+
 
 def main() -> int:
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("archive", nargs="?", help="Loop 'Export as CSV' ZIP file")
+    ap.add_argument("archive", nargs="?",
+                    help="Loop export: CSV ZIP, SQLite .db backup, or a folder of auto-backups")
     ap.add_argument("--worker", help="Worker base URL (default: config.toml worker_url)")
     ap.add_argument("--key", help="export key (default: config.toml export_key)")
     ap.add_argument("--since", help="only import days on/after YYYY-MM-DD")
@@ -194,7 +286,7 @@ def main() -> int:
     if not args.dry_run and (not worker or not key):
         ap.error("need --worker and --key (or worker_url/export_key in config.toml)")
 
-    days = parse_archive(args.archive)
+    days = parse_source(args.archive)
     if args.since:
         days = {d: h for d, h in days.items() if d >= args.since}
     if not days:
