@@ -203,6 +203,19 @@ day in **Taskito**: it has no public API, webhooks, or automation hooks — its 
 integration is import-only — so completions can't be read out of it directly; a one-tap
 widget next to it is the practical bridge.)
 
+**From [Loop Habit Tracker](https://github.com/iSoron/uhabits)** — keep tracking in Loop and
+backfill from its **Export as CSV** ZIP:
+```bash
+python exporter/import_loop.py "Loop Habits CSV 2026-06-12.zip" [--since 2026-03-01] [--dry-run]
+```
+This parses the per-habit `Checkmarks.csv` files (YES_MANUAL → done, NO/YES_AUTO → not done
+that day, SKIP/UNKNOWN omitted; numerical habits are de-scaled from Loop's ×1000 storage) and
+POSTs each day to `/ingest/habits`. Loop's automation API is write-only — Tasker can *check*
+habits in Loop but nothing can read checkmarks out live — so live mirroring isn't possible
+without root; re-run the import every week or two instead. (Bonus: since Loop accepts
+check-ins via Tasker intents, a single widget can mark the habit in Loop *and* POST to the
+Worker in one tap if you want both live.)
+
 **Backfill history** to populate the charts (writes only `Health/` files, leaves your journal alone):
 ```bash
 cd exporter
