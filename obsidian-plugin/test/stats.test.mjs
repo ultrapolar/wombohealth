@@ -120,6 +120,16 @@ const dyn = discoverMetrics(dynRows);
 assert.deepEqual(dyn.map((m) => m.key), ["vitamin_d", "zone_minutes"], "extras discovered, canonical keys excluded");
 assert.equal(dyn[0].label, "Vitamin D", "extra label title-cased");
 assert.equal(dyn[0].group, "Other", "extras grouped under Other");
+
+// Known dynamic metrics get proper labels and correlation directions.
+const known = discoverMetrics([
+  { date: "2026-06-10", values: { polar_ans_charge: 3.7, samsung_ages_index: 45, samsung_antioxidant_index: 64 } },
+]);
+const byKey = Object.fromEntries(known.map((m) => [m.key, m]));
+assert.equal(byKey.ans_charge.label, "ANS charge", "ANS charge labeled");
+assert.equal(byKey.ans_charge.better, "high", "ANS charge direction");
+assert.equal(byKey.ages_index.better, "low", "AGEs index lower-is-better");
+assert.equal(byKey.antioxidant_index.label, "Antioxidant index", "antioxidant labeled");
 assert.ok(METRICS.some((m) => m.key === "glucose_avg" && m.group === "Metabolic"), "metabolic metric registered");
 const dynSeries = buildMetricSeries(dyn[0], dynRows, defaultPrefs());
 assert.deepEqual(dynSeries.perDevice[0].points, [4500, 3000], "dynamic metric charts from rows");

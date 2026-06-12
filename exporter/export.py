@@ -143,13 +143,11 @@ CANONICAL_METRICS = (
 UH_METABOLIC = ("glucose_avg", "metabolic_score", "glucose_variability", "hba1c", "time_in_target")
 
 
-def _uh_extras(data: dict) -> dict:
-    """Sanitized {slug: number} from ultrahuman.extra, skipping reserved keys."""
+def _sanitize_extras(raw, reserved: set) -> dict:
+    """Sanitized {slug: number} from a source's extra dict, skipping reserved keys."""
     out = {}
-    raw = (data.get("ultrahuman") or {}).get("extra")
     if not isinstance(raw, dict):
         return out
-    reserved = set(CANONICAL_METRICS) | set(UH_METABOLIC)
     for name, v in raw.items():
         slug = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
         if not slug or not re.match(r"^[a-z]", slug) or slug in reserved:
@@ -157,6 +155,25 @@ def _uh_extras(data: dict) -> dict:
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             continue
         out[slug] = v
+    return out
+
+
+def _uh_extras(data: dict) -> dict:
+    """Ultrahuman extras passthrough (unknown partner-API metric types)."""
+    reserved = set(CANONICAL_METRICS) | set(UH_METABOLIC)
+    return _sanitize_extras((data.get("ultrahuman") or {}).get("extra"), reserved)
+
+
+def _device_extras(data: dict) -> dict:
+    """{device: {slug: number}} extras for each secondary source (Polar ANS
+    charge, Samsung wellness scores, ...). Written as <device>_<slug> keys so
+    the dashboard plugin discovers them as dynamic metrics."""
+    reserved = set(CANONICAL_METRICS)
+    out = {}
+    for dev in ("withings", "fitbit", "polar", "samsung"):
+        extras = _sanitize_extras((data.get(dev) or {}).get("extra"), reserved)
+        if extras:
+            out[dev] = extras
     return out
 
 
@@ -274,6 +291,11 @@ def render_health_frontmatter(data: dict) -> str:
             lines.append(f"ultrahuman_{metric}: {v}")
     for slug, v in sorted(_uh_extras(data).items()):
         lines.append(f"ultrahuman_{slug}: {v}")
+    # Secondary-source extras (Polar ANS charge / sleep charge, Samsung wellness
+    # scores, ...) in the same per-device namespace.
+    for dev, extras in _device_extras(data).items():
+        for slug, v in sorted(extras.items()):
+            lines.append(f"{dev}_{slug}: {v}")
     # Wyze body composition (its own field family; health-md-visualizations has no body
     # fields, so these feed our dashboard plugin / Dataview, not that plugin's charts).
     for metric, v in ((data.get("wyze") or {}).get("body") or {}).items():
@@ -462,6 +484,7 @@ def render_block(data: dict) -> str:
         field("Home-Humidity", home.get("humidity"))
         field("Home-Noise-dB", home.get("noise"))
 
+    dev_extras = _device_extras(data)
     for label, key in SECONDARY:
         src = data.get(key)
         if not src:
@@ -477,6 +500,8 @@ def render_block(data: dict) -> str:
         field(f"{label}-RHR", vi.get("rhr"))
         field(f"{label}-HRV", vi.get("hrv"))
         field(f"{label}-SpO2", vi.get("spo2"))
+        for slug, v in sorted(dev_extras.get(key, {}).items()):
+            field(f"{label}-" + slug.replace("_", "-").title(), v)
 
     # Wyze body-composition fields.
     wb2 = (data.get("wyze") or {}).get("body") or {}

@@ -10,8 +10,18 @@
 //   "date": "2026-05-30",
 //   "sleep":    { "score": 80, "duration_min": 430, "deep_min": 70, "rem_min": 95, "light_min": 250, "awake_min": 15 },
 //   "activity": { "steps": 9000, "active_min": 45, "calories": 2300 },
-//   "vitals":   { "rhr": 55, "spo2": 97, "hrv": 40 }
+//   "vitals":   { "rhr": 55, "spo2": 97, "hrv": 40 },
+//   "extra":    { "antioxidant_index": 64, "energy_score": 82, "ages_index": 45, "stress": 30, "skin_temp_c": 33.1 }
 // }
+//
+// On the "extra" wellness group: sleep/activity/vitals can be read from Health
+// Connect (Samsung Health syncs them there), but Samsung's proprietary scores —
+// Antioxidant Index (Watch 8 / One UI 8 Watch carotenoid measurement), Energy
+// Score, AGEs Index — are NOT Health Connect data types; they live only in the
+// Samsung Health app (the partner-gated Samsung Health Data SDK exposes some).
+// They're accepted here so a manual one-tap widget — or a future bridge — can
+// log them; the exporter writes them as samsung_<key> frontmatter and the
+// dashboard plugin picks them up as dynamic metrics.
 
 export const id = 'samsung';
 
@@ -37,6 +47,7 @@ const NUM_FIELDS = {
   sleep: ['score', 'duration_min', 'deep_min', 'rem_min', 'light_min', 'awake_min'],
   activity: ['steps', 'active_min', 'calories', 'distance_m'],
   vitals: ['rhr', 'spo2', 'hrv', 'breathing_rate'],
+  extra: ['antioxidant_index', 'energy_score', 'ages_index', 'stress', 'skin_temp_c'],
 };
 
 function num(v) {

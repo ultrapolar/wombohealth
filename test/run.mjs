@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 import { parseRing, parseHome } from '../src/sources/ultrahuman.js';
 import { normalizeSleep as withingsNormalize } from '../src/sources/withings.js';
 import { normalize as fitbitNormalize } from '../src/sources/fitbit.js';
-import { normalize as polarNormalize } from '../src/sources/polar.js';
-import { normalize as samsungNormalize } from '../src/sources/samsung.js';
+import { normalize as polarNormalize, alertnessForDate } from '../src/sources/polar.js';
+import { normalize as samsungNormalize, sanitize as samsungSanitize } from '../src/sources/samsung.js';
 import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
 import { sanitize as habitsSanitize } from '../src/sources/habits.js';
 import { buildUnified } from '../src/aggregate.js';
@@ -102,23 +102,69 @@ assert.equal(f.vitals.spo2, 96, 'fitbit spo2');
 assert.equal(f.vitals.hrv, 38, 'fitbit hrv');
 
 // ===== Polar =====
+// Real shape: nightly-recharge uses hyphenated keys; sleep uses snake_case.
+// "heart-rate-variability-avg" is the RMSSD; "beat-to-beat-avg" is mean RR.
 const p = polarNormalize({
-  sleep: { deep_sleep: 4500, rem_sleep: 5280, light_sleep: 15420, total_interruption_duration: 1080, sleep_score: 80 },
-  recharge: { heart_rate_avg: 53, beat_to_beat_avg: 42, nightly_recharge_status: 4 },
+  sleep: {
+    deep_sleep: 4500, rem_sleep: 5280, light_sleep: 15420, total_interruption_duration: 1080,
+    sleep_score: 80, sleep_charge: 5, continuity: 7.2, sleep_cycles: 4,
+    group_duration_score: 88.0, group_solidity_score: 75.5, group_regeneration_score: 81.0,
+  },
+  recharge: {
+    'heart-rate-avg': 53, 'beat-to-beat-avg': 1132, 'heart-rate-variability-avg': 42,
+    'breathing-rate-avg': 14.5, 'nightly-recharge-status': 4,
+    'ans-charge': 3.7, 'ans-charge-status': 4,
+  },
+  alertness: { grade: 82.5, sleep_period_end_time: '2026-05-30T07:10:00' },
 });
 assert.equal(p.sleep.deep_min, 75, 'polar deep');
 assert.equal(p.sleep.rem_min, 88, 'polar rem');
 assert.equal(p.sleep.duration_min, 420, 'polar duration');
 assert.equal(p.sleep.score, 80, 'polar score');
-assert.equal(p.vitals.rhr, 53, 'polar rhr');
-assert.equal(p.vitals.hrv, 42, 'polar hrv');
+assert.equal(p.vitals.rhr, 53, 'polar rhr (hyphenated key)');
+assert.equal(p.vitals.hrv, 42, 'polar hrv = RMSSD field, not beat-to-beat');
+assert.equal(p.vitals.breathing_rate, 14.5, 'polar breathing rate');
 assert.equal(p.extra.nightly_recharge_status, 4, 'polar recharge status');
+assert.equal(p.extra.ans_charge, 3.7, 'polar ANS charge');
+assert.equal(p.extra.ans_charge_status, 4, 'polar ANS charge status');
+assert.equal(p.extra.beat_to_beat_avg, 1132, 'mean RR kept in extra');
+assert.equal(p.extra.sleep_charge, 5, 'polar sleep charge');
+assert.equal(p.extra.sleep_continuity, 7.2, 'polar continuity');
+assert.equal(p.extra.sleep_regeneration_score, 81, 'polar regeneration score');
+assert.equal(p.extra.alertness_grade, 82.5, 'SleepWise alertness grade');
+
+// snake_case fallback still works (older fixtures / future API normalization)
+const pSnake = polarNormalize({ recharge: { heart_rate_avg: 55, heart_rate_variability_avg: 38, ans_charge: -2.1 } });
+assert.equal(pSnake.vitals.rhr, 55, 'polar snake_case rhr fallback');
+assert.equal(pSnake.vitals.hrv, 38, 'polar snake_case hrv fallback');
+assert.equal(pSnake.extra.ans_charge, -2.1, 'polar snake_case ans fallback');
+
+// alertnessForDate picks the record whose sleep ended on the requested day
+assert.equal(
+  alertnessForDate([
+    { grade: 70, sleep_period_end_time: '2026-05-29T07:00:00' },
+    { grade: 82.5, sleep_period_end_time: '2026-05-30T07:10:00' },
+  ], '2026-05-30').grade,
+  82.5, 'alertnessForDate matches wake-up day',
+);
+assert.equal(alertnessForDate(null, '2026-05-30'), null, 'alertnessForDate tolerates null');
 
 // ===== Samsung (ingest passthrough) =====
 const s = samsungNormalize({ sleep: { duration_min: 400, score: 77 }, activity: { steps: 8000 }, vitals: { rhr: 58 } });
 assert.equal(s.connected, true, 'samsung connected');
 assert.equal(s.sleep.duration_min, 400, 'samsung sleep');
 assert.equal(samsungNormalize(null), null, 'samsung null passthrough');
+
+// Wellness extras: allowlisted numbers kept, junk dropped.
+const sClean = samsungSanitize({
+  vitals: { rhr: 58 },
+  extra: { antioxidant_index: 64, energy_score: '82', ages_index: 45, stress: 30, skin_temp_c: 33.1, evil: '<x>' },
+});
+assert.equal(sClean.extra.antioxidant_index, 64, 'samsung antioxidant index kept');
+assert.equal(sClean.extra.energy_score, 82, 'samsung energy score string coerced');
+assert.equal(sClean.extra.ages_index, 45, 'samsung AGEs index kept');
+assert.equal(sClean.extra.skin_temp_c, 33.1, 'samsung skin temp kept');
+assert.equal('evil' in sClean.extra, false, 'samsung non-allowlisted extra dropped');
 
 // ===== Unified model (the /json contract) =====
 const unified = buildUnified({

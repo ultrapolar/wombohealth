@@ -61,11 +61,29 @@ export const METRICS: MetricDef[] = [
 
 const METRIC_KEYS = new Set(METRICS.map((m) => m.key));
 
-// Frontmatter keys like `ultrahuman_vitamin_d` that aren't canonical metrics are
-// the Worker's extras passthrough (new upstream metric types, e.g. future
-// PowerPlug data). Surface them as dynamic metrics in the "Other" group so they
-// chart and correlate with habits without a plugin update. Direction is unknown
-// for novel metrics, so "higher is better" is assumed — treat colors as hints.
+// Known extras get a proper label and correlation direction; anything else
+// defaults to "higher is better" (treat those colors as hints).
+const KNOWN_DYNAMIC: Record<string, Partial<MetricDef>> = {
+  // Polar Nightly Recharge / sleep structure / SleepWise
+  ans_charge: { label: "ANS charge", better: "high" },
+  ans_charge_status: { label: "ANS charge status", better: "high" },
+  nightly_recharge_status: { label: "Nightly Recharge status", better: "high" },
+  sleep_charge: { label: "Sleep charge", better: "high" },
+  sleep_continuity: { label: "Sleep continuity", better: "high" },
+  alertness_grade: { label: "Alertness grade (SleepWise)", better: "high" },
+  beat_to_beat_avg: { label: "Mean RR interval", unit: "ms", better: "high" },
+  // Samsung wellness scores
+  antioxidant_index: { label: "Antioxidant index", better: "high" },
+  energy_score: { label: "Energy score", better: "high" },
+  ages_index: { label: "AGEs index", better: "low" },
+  stress: { label: "Stress", better: "low" },
+};
+
+// Frontmatter keys like `ultrahuman_vitamin_d` or `polar_ans_charge` that aren't
+// canonical metrics are the Worker's extras passthrough (new upstream metric
+// types, secondary-source recovery/wellness scores). Surface them as dynamic
+// metrics in the "Other" group so they chart and correlate with habits without
+// a plugin update.
 export function discoverMetrics(rows: DayRow[]): MetricDef[] {
   const found = new Set<string>();
   for (const r of rows) {
@@ -82,6 +100,7 @@ export function discoverMetrics(rows: DayRow[]): MetricDef[] {
     group: "Other",
     unit: "",
     better: "high" as const,
+    ...KNOWN_DYNAMIC[key],
   }));
 }
 

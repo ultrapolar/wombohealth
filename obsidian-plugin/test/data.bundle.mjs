@@ -68,6 +68,21 @@ var METRICS = [
   { key: "time_in_target", label: "Time in target", group: "Metabolic", unit: "%", better: "high" }
 ];
 var METRIC_KEYS = new Set(METRICS.map((m) => m.key));
+var KNOWN_DYNAMIC = {
+  // Polar Nightly Recharge / sleep structure / SleepWise
+  ans_charge: { label: "ANS charge", better: "high" },
+  ans_charge_status: { label: "ANS charge status", better: "high" },
+  nightly_recharge_status: { label: "Nightly Recharge status", better: "high" },
+  sleep_charge: { label: "Sleep charge", better: "high" },
+  sleep_continuity: { label: "Sleep continuity", better: "high" },
+  alertness_grade: { label: "Alertness grade (SleepWise)", better: "high" },
+  beat_to_beat_avg: { label: "Mean RR interval", unit: "ms", better: "high" },
+  // Samsung wellness scores
+  antioxidant_index: { label: "Antioxidant index", better: "high" },
+  energy_score: { label: "Energy score", better: "high" },
+  ages_index: { label: "AGEs index", better: "low" },
+  stress: { label: "Stress", better: "low" }
+};
 function discoverMetrics(rows) {
   const found = /* @__PURE__ */ new Set();
   for (const r of rows) {
@@ -83,7 +98,8 @@ function discoverMetrics(rows) {
     label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
     group: "Other",
     unit: "",
-    better: "high"
+    better: "high",
+    ...KNOWN_DYNAMIC[key]
   }));
 }
 function loadHealthData(app, folder) {

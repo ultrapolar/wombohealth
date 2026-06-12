@@ -67,9 +67,15 @@ async function get(token, path) {
 
 const sec2min = (s) => (s != null ? Math.round(s / 60) : null);
 
-// Pure: map Polar sleep + nightly-recharge responses to the normalized shape.
-// Field names are PROVISIONAL — confirm against real data and adjust if needed.
-export function normalize({ sleep, recharge }) {
+// The nightly-recharge endpoint returns hyphenated keys ("ans-charge",
+// "heart-rate-avg"); sleep returns snake_case. Read both so either shape works.
+const fld = (obj, name) => obj?.[name] ?? obj?.[name.replace(/-/g, '_')] ?? null;
+
+// Pure: map Polar sleep + nightly-recharge (+ optional SleepWise alertness)
+// responses to the normalized shape. Recharge field names verified against the
+// AccessLink API (hyphenated); "heart-rate-variability-avg" is the true RMSSD —
+// "beat-to-beat-avg" is the mean RR interval, kept in extra, not used as HRV.
+export function normalize({ sleep, recharge, alertness = null }) {
   const sleepObj = sleep
     ? {
         score: sleep.sleep_score ?? null,
@@ -82,27 +88,58 @@ export function normalize({ sleep, recharge }) {
     : null;
   const vitals = recharge
     ? {
-        rhr: recharge.heart_rate_avg ?? null,
-        hrv: recharge.beat_to_beat_avg ?? recharge.hrv_avg ?? null,
-        breathing_rate: recharge.breathing_rate_avg ?? null,
+        rhr: fld(recharge, 'heart-rate-avg'),
+        hrv: fld(recharge, 'heart-rate-variability-avg'),
+        breathing_rate: fld(recharge, 'breathing-rate-avg'),
       }
     : {};
+  // Recovery/quality metrics beyond the canonical set. Numeric-only; the
+  // exporter writes them as polar_<key> frontmatter and the dashboard plugin
+  // discovers them as dynamic metrics.
+  const extra = {};
+  const put = (k, v) => {
+    if (typeof v === 'number' && Number.isFinite(v)) extra[k] = v;
+  };
+  if (recharge) {
+    put('nightly_recharge_status', fld(recharge, 'nightly-recharge-status')); // 1-6
+    put('ans_charge', fld(recharge, 'ans-charge')); // -10..+10
+    put('ans_charge_status', fld(recharge, 'ans-charge-status')); // 1-5
+    put('beat_to_beat_avg', fld(recharge, 'beat-to-beat-avg')); // mean RR ms
+  }
+  if (sleep) {
+    put('sleep_charge', sleep.sleep_charge); // 1-6
+    put('sleep_continuity', sleep.continuity); // 0-10
+    put('sleep_cycles', sleep.sleep_cycles);
+    put('sleep_rating', sleep.sleep_rating);
+    put('sleep_duration_score', sleep.group_duration_score);
+    put('sleep_solidity_score', sleep.group_solidity_score);
+    put('sleep_regeneration_score', sleep.group_regeneration_score);
+  }
+  if (alertness) put('alertness_grade', alertness.grade);
   return {
     connected: true,
     sleep: sleepObj,
     activity: null,
     vitals,
-    extra: { nightly_recharge_status: recharge?.nightly_recharge_status ?? null },
+    extra,
   };
+}
+
+// Pick the SleepWise alertness record whose sleep ended on `date` (wake-up day,
+// matching Polar's sleep-date convention) from the endpoint's recent-window list.
+export function alertnessForDate(list, date) {
+  if (!Array.isArray(list)) return null;
+  return list.find((a) => typeof a?.sleep_period_end_time === 'string' && a.sleep_period_end_time.startsWith(date)) || null;
 }
 
 export async function getDay(env, date) {
   const t = await loadTokens(env, id);
   if (!t?.access_token) return null;
-  const [sleep, recharge] = await Promise.all([
+  const [sleep, recharge, alertnessList] = await Promise.all([
     get(t.access_token, `/v3/users/sleep/${date}`),
     get(t.access_token, `/v3/users/nightly-recharge/${date}`),
+    get(t.access_token, '/v3/users/sleepwise/alertness').catch(() => null), // beta; best-effort
   ]);
   if (!sleep && !recharge) return { connected: true, sleep: null, activity: null, vitals: {}, extra: {} };
-  return normalize({ sleep, recharge });
+  return normalize({ sleep, recharge, alertness: alertnessForDate(alertnessList, date) });
 }

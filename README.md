@@ -109,6 +109,16 @@ For each service you want to add:
 Check `https://<your-worker>/status?key=<EXPORT_KEY>` to see what's connected. Connected sources show
 up automatically in `/json` and in each daily note — no exporter changes needed.
 
+**Polar deep recovery.** Beyond sleep basics, the Polar adapter extracts the full Nightly
+Recharge™ recovery set — **ANS charge** (−10…+10, the autonomic-nervous-system recovery the
+watch computes from your first 4 sleep hours), ANS charge status (1–5), Nightly Recharge
+status (1–6), true RMSSD HRV (`heart-rate-variability-avg`; the mean RR interval is kept
+separately), breathing rate — plus sleep structure (sleep charge, continuity, cycles,
+duration/solidity/regeneration scores) and the **SleepWise™ alertness grade** (best-effort;
+beta endpoint). They land as `polar_ans_charge`-style frontmatter, `Polar-Ans-Charge`
+Dataview fields, and dynamic dashboard metrics with correct better-direction — all
+correlatable against habits.
+
 ### 6. Samsung Galaxy Watch (optional, push-based)
 Samsung has no cloud API, so an on-device **Health Connect** bridge (HTTP Shortcuts / Tasker /
 MacroDroid, or a small companion app) pushes a day's metrics:
@@ -120,6 +130,16 @@ Body:   {"sleep":{"duration_min":430,"deep_min":70},"activity":{"steps":9000},"v
 ```
 
 See [`src/sources/samsung.js`](src/sources/samsung.js) for the full accepted shape.
+
+**Wellness scores (Antioxidant Index & friends).** The ingest also accepts an `extra` group —
+`antioxidant_index`, `energy_score`, `ages_index`, `stress`, `skin_temp_c` — which flows to
+`samsung_antioxidant_index` frontmatter and dashboard metrics (AGEs/stress correctly treated
+as lower-is-better). Reality check: sleep/steps/vitals sync to **Health Connect** where a
+bridge can read them, but Samsung's proprietary scores do **not** — the Antioxidant Index
+(Galaxy Watch 8 / One UI 8 Watch carotenoid measurement), Energy Score, and AGEs Index exist
+only inside Samsung Health (the Samsung Health Data SDK exposes some, but it's
+partner-approval-gated). Until that changes, log them with a one-tap HTTP Shortcuts widget
+right after you take the measurement — same pattern as habit logging.
 
 ### 7. Wyze smart scale (optional, body composition)
 Wyze has no official API, so a local Python puller reads your weigh-ins (via the
