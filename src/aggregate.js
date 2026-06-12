@@ -33,6 +33,20 @@ export function buildUnified({
         movement_index: ring.movementIndex || null,
         vo2_max: ring.vo2Max || null,
       },
+      // CGM / metabolic family — null unless an M1 sensor reports for this day.
+      metabolic: [ring.glucoseAvg, ring.metabolicScore, ring.glucoseVariability, ring.hba1c, ring.timeInTarget]
+        .some((v) => v != null)
+        ? {
+            glucose_avg: ring.glucoseAvg ?? null,
+            metabolic_score: ring.metabolicScore ?? null,
+            glucose_variability: ring.glucoseVariability ?? null,
+            hba1c: ring.hba1c ?? null,
+            time_in_target: ring.timeInTarget ?? null,
+          }
+        : null,
+      // Unrecognized-but-numeric metric types passed through verbatim (slugged
+      // names, finite numbers) — future PowerPlug data lands here automatically.
+      extra: ring.extra && Object.keys(ring.extra).length ? ring.extra : null,
       home: home
         ? {
             aqi: home.aqi,

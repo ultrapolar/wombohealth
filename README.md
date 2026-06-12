@@ -163,6 +163,41 @@ changes auth; a break only stops scale updates, the rest of the pipeline keeps w
 Adding another source later is additive: a new `src/sources/<name>.js` (normalize → unified model)
 that `/json`, the TRMNL payload, and the exporter pick up automatically.
 
+## Ultrahuman PowerPlugs & the full partner-API catalog
+
+The app's PowerPlugs (Vitamin D tracker, Caffeine Window, Circadian alignment, AFib,
+Cycle tracking, …) are **not exposed by the partner API today**. The documented catalog
+(cross-checked against two independent API-schema projects) is: `hr, temp, hrv, steps,
+night_rhr, avg_sleep_hrv, sleep, spo2, active_minutes, recovery_index, movement_index,
+vo2_max, sleep_rhr` plus the CGM/metabolic family for M1 users: `glucose,
+average_glucose, metabolic_score, glucose_variability, hba1c, time_in_target`.
+
+What this project does about it:
+
+- **The CGM/metabolic family is fully parsed** → `ultrahuman.metabolic` in `/json`,
+  `ultrahuman_glucose_avg`-style frontmatter, `UH-Glucose-Avg` Dataview fields, and a
+  "Metabolic" group in the dashboard plugin (charts + habit correlations) — all of it
+  only rendering when data is present.
+- **Unknown metric types pass through automatically.** Any type the Worker doesn't
+  recognize whose payload carries a simple number (`value`/`avg`/`total`/`score`/`index`)
+  is captured into `ultrahuman.extra` (names slugged, numbers only), written to the vault
+  as `ultrahuman_<type>` frontmatter + `UH-<Type>` Dataview fields, and surfaced by the
+  dashboard plugin as a dynamic metric in the "Other" group — including in the Habits
+  tab's correlations. If Ultrahuman ever ships `vitamin_d` (or anything else) into the
+  partner API, it appears in your vault and dashboard with **zero code changes**.
+  (Direction is unknown for novel metrics, so correlation coloring assumes
+  higher-is-better — treat it as a hint.)
+- **Check what *your* account returns:** `GET /debug/raw?date=YYYY-MM-DD` (key-gated)
+  dumps the raw upstream response — if a plug metric shows up there under a new type
+  name, it's already flowing through.
+
+Until then, two practical bridges: log plug-adjacent things as **habits with
+quantities** (`habit_vitamin_d_iu: 4000`, `habit_caffeine_after_noon: 0` via the
+quick-log command or `/ingest/habits`) and correlate them immediately; and if you use
+**Blood Vision**, lab biomarkers (including blood vitamin D) live behind Ultrahuman's
+separate UltraSignal API (`vision.ultrahuman.com/developer-docs`) — OAuth-based and
+not integrated here yet.
+
 ## Visualizations in Obsidian
 Three layers, all fed by what the exporter writes:
 

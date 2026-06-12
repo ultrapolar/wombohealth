@@ -30,6 +30,43 @@ assert.equal(home.co2, 650, 'home co2');
 assert.equal(home.pm25, 8, 'home pm25');
 assert.equal(home.tempC, 22.5, 'home temp');
 
+// ===== Ultrahuman: metric_data shape, CGM family, and extras passthrough =====
+const ring2 = parseRing({
+  data: {
+    metric_data: [
+      { type: 'steps', object: { total: 5000 } },
+      { type: 'average_glucose', object: { value: 102 } },
+      { type: 'metabolic_score', object: { value: 78 } },
+      { type: 'glucose_variability', object: { value: 12 } },
+      { type: 'hba1c', object: { value: 5.2 } },
+      { type: 'time_in_target', object: { value: 91 } },
+      { type: 'vitamin_d', object: { value: 4500 } },          // hypothetical future plug metric
+      { type: 'Caffeine Window', object: { score: 65 } },      // name needs slugging
+      { type: '<script>', object: { value: 1 } },              // markup stripped -> "script"
+      { type: '5am_club', object: { value: 1 } },              // must start with a letter -> dropped
+      { type: 'afib', object: { complex: { nested: true } } }, // no simple number -> dropped
+      { type: 'hr', object: { last_reading: 70 } },            // known type, never an extra
+    ],
+  },
+});
+assert.equal(ring2.steps, 5000, 'metric_data shape parsed');
+assert.equal(ring2.glucoseAvg, 102, 'average_glucose value');
+assert.equal(ring2.metabolicScore, 78, 'metabolic score');
+assert.equal(ring2.glucoseVariability, 12, 'glucose variability');
+assert.equal(ring2.hba1c, 5.2, 'hba1c');
+assert.equal(ring2.timeInTarget, 91, 'time in target');
+assert.equal(ring2.extra.vitamin_d, 4500, 'unknown numeric type captured as extra');
+assert.equal(ring2.extra.caffeine_window, 65, 'extra type name slugged');
+assert.equal(ring2.extra.script, 1, 'markup stripped from extra type name');
+assert.equal('5am_club' in ring2.extra, false, 'extra name must start with a letter');
+assert.equal('afib' in ring2.extra, false, 'non-numeric extra dropped');
+assert.equal('hr' in ring2.extra, false, 'known types excluded from extras');
+const glucoseGraphRing = parseRing({
+  data: { metric_data: [{ type: 'glucose', object: { values: [{ value: 100, timestamp: 1 }, { value: 0, timestamp: 2 }, { value: 110, timestamp: 3 }] } }] },
+});
+assert.equal(glucoseGraphRing.glucoseAvg, 105, 'glucose graph averaged ignoring zero dropouts');
+assert.deepEqual(parseRing(load('daily_metrics.sample.json')).extra, {}, 'fixture has no extras');
+
 // ===== Withings =====
 const w = withingsNormalize({
   series: [{ date: '2026-05-30', data: {
@@ -167,6 +204,14 @@ const uHabits = buildUnified({ date: '2026-05-30', ring, home, habits: { supplem
 assert.equal(uHabits.habits.supplements, 1, 'unified carries habits');
 assert.equal(uHabits.habits.meditation, 0, 'unified keeps explicit habit 0');
 assert.equal(unified.habits, null, 'habits default to null when not ingested');
+
+// --- Ultrahuman metabolic + extras in the unified model ---
+const uPlugs = buildUnified({ date: '2026-05-30', ring: ring2, home: null });
+assert.equal(uPlugs.ultrahuman.metabolic.glucose_avg, 102, 'unified metabolic glucose');
+assert.equal(uPlugs.ultrahuman.metabolic.metabolic_score, 78, 'unified metabolic score');
+assert.equal(uPlugs.ultrahuman.extra.vitamin_d, 4500, 'unified carries extras');
+assert.equal(unified.ultrahuman.metabolic, null, 'metabolic null without CGM data');
+assert.equal(unified.ultrahuman.extra, null, 'extra null when none captured');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

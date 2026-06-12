@@ -38,7 +38,7 @@ export interface MetricDef {
 
 const hm = (min: number) => `${Math.floor(min / 60)}h ${String(Math.round(min % 60)).padStart(2, "0")}m`;
 
-export const GROUPS = ["Sleep", "Heart", "Activity"];
+export const GROUPS = ["Sleep", "Heart", "Activity", "Metabolic", "Other"];
 
 export const METRICS: MetricDef[] = [
   { key: "sleep_total_min", label: "Sleep duration", group: "Sleep", unit: "", fmt: hm, better: "high" },
@@ -50,7 +50,40 @@ export const METRICS: MetricDef[] = [
   { key: "rhr", label: "Resting HR", group: "Heart", unit: "bpm", better: "low" },
   { key: "steps", label: "Steps", group: "Activity", unit: "", better: "high" },
   { key: "active_min", label: "Active minutes", group: "Activity", unit: "min", better: "high" },
+  // Ultrahuman CGM/metabolic family (M1 sensor) — written by the exporter as
+  // ultrahuman_<key>; charts/correlations only render when data is present.
+  { key: "glucose_avg", label: "Avg glucose", group: "Metabolic", unit: "mg/dL", better: "low" },
+  { key: "glucose_variability", label: "Glucose variability", group: "Metabolic", unit: "%", better: "low" },
+  { key: "metabolic_score", label: "Metabolic score", group: "Metabolic", unit: "", better: "high" },
+  { key: "hba1c", label: "HbA1c", group: "Metabolic", unit: "%", better: "low" },
+  { key: "time_in_target", label: "Time in target", group: "Metabolic", unit: "%", better: "high" },
 ];
+
+const METRIC_KEYS = new Set(METRICS.map((m) => m.key));
+
+// Frontmatter keys like `ultrahuman_vitamin_d` that aren't canonical metrics are
+// the Worker's extras passthrough (new upstream metric types, e.g. future
+// PowerPlug data). Surface them as dynamic metrics in the "Other" group so they
+// chart and correlate with habits without a plugin update. Direction is unknown
+// for novel metrics, so "higher is better" is assumed — treat colors as hints.
+export function discoverMetrics(rows: DayRow[]): MetricDef[] {
+  const found = new Set<string>();
+  for (const r of rows) {
+    for (const k of Object.keys(r.values)) {
+      const dev = DEVICES.find((d) => k.startsWith(d + "_"));
+      if (!dev) continue;
+      const metricKey = k.slice(dev.length + 1);
+      if (!METRIC_KEYS.has(metricKey)) found.add(metricKey);
+    }
+  }
+  return [...found].sort().map((key) => ({
+    key,
+    label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    group: "Other",
+    unit: "",
+    better: "high" as const,
+  }));
+}
 
 export interface DayRow {
   date: string;
@@ -65,13 +98,13 @@ export function loadHealthData(app: App, folder: string): DayRow[] {
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || !fm.date) continue;
     const values: Partial<Record<string, number>> = {};
-    for (const d of DEVICES) {
-      for (const m of METRICS) {
-        const k = `${d}_${m.key}`;
-        const v = fm[k];
-        if (typeof v === "number") values[k] = v;
-        else if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) values[k] = Number(v);
-      }
+    // Capture every numeric device-namespaced key, not just the canonical set,
+    // so extras passed through by the Worker become dynamic metrics.
+    for (const k of Object.keys(fm)) {
+      if (!DEVICES.some((d) => k.startsWith(d + "_"))) continue;
+      const v = fm[k];
+      if (typeof v === "number") values[k] = v;
+      else if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) values[k] = Number(v);
     }
     rows.push({ date: String(fm.date), values });
   }

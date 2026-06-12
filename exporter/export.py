@@ -137,6 +137,28 @@ CANONICAL_METRICS = (
     "sleep_light_min", "hrv", "rhr", "steps", "active_min",
 )
 
+# Ultrahuman-only metric families beyond the canonical set: the CGM/metabolic
+# group, plus whatever landed in ultrahuman.extra (unknown-but-numeric metric
+# types the Worker passed through — future PowerPlug data arrives this way).
+UH_METABOLIC = ("glucose_avg", "metabolic_score", "glucose_variability", "hba1c", "time_in_target")
+
+
+def _uh_extras(data: dict) -> dict:
+    """Sanitized {slug: number} from ultrahuman.extra, skipping reserved keys."""
+    out = {}
+    raw = (data.get("ultrahuman") or {}).get("extra")
+    if not isinstance(raw, dict):
+        return out
+    reserved = set(CANONICAL_METRICS) | set(UH_METABOLIC)
+    for name, v in raw.items():
+        slug = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
+        if not slug or not re.match(r"^[a-z]", slug) or slug in reserved:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        out[slug] = v
+    return out
+
 
 def _canonical_per_device(data: dict) -> dict:
     """Pull each device's value for every canonical metric (None when absent)."""
@@ -243,6 +265,15 @@ def render_health_frontmatter(data: dict) -> str:
             if v is None or v == "":
                 continue
             lines.append(f"{dev}_{metric}: {v}")
+    # Ultrahuman CGM/metabolic family + extras passthrough (same ultrahuman_*
+    # namespace, so the dashboard plugin discovers them as dynamic metrics).
+    met = (data.get("ultrahuman") or {}).get("metabolic") or {}
+    for metric in UH_METABOLIC:
+        v = met.get(metric)
+        if v is not None and v != "":
+            lines.append(f"ultrahuman_{metric}: {v}")
+    for slug, v in sorted(_uh_extras(data).items()):
+        lines.append(f"ultrahuman_{slug}: {v}")
     # Wyze body composition (its own field family; health-md-visualizations has no body
     # fields, so these feed our dashboard plugin / Dataview, not that plugin's charts).
     for metric, v in ((data.get("wyze") or {}).get("body") or {}).items():
@@ -311,6 +342,22 @@ def render_block(data: dict) -> str:
             f"**Activity** {act.get('steps', 0)} steps · {act.get('active_min', 0)}m active · "
             f"movement {_disp(act.get('movement_index'))} · VO₂max {_disp(act.get('vo2_max'))}"
         )
+    met = uh.get("metabolic") or {}
+    if any(v is not None for v in met.values()):
+        mbits = []
+        for label, key, suf in [
+            ("glucose", "glucose_avg", " avg"), ("variability", "glucose_variability", "%"),
+            ("score", "metabolic_score", ""), ("HbA1c", "hba1c", "%"), ("in target", "time_in_target", "%"),
+        ]:
+            v = met.get(key)
+            if v is not None:
+                mbits.append(f"{label} {v}{suf}")
+        if mbits:
+            lines.append("**Metabolic** " + " · ".join(mbits))
+    extras = _uh_extras(data)
+    if extras:
+        ebits = [f"{n.replace('_', ' ')} {v:g}" for n, v in sorted(extras.items())]
+        lines.append("**UH extras** " + " · ".join(ebits))
     if home:
         hbits = []
         for label, key, suf in [
@@ -398,6 +445,13 @@ def render_block(data: dict) -> str:
     field("UH-Active-Min", act.get("active_min"))
     field("UH-Movement", act.get("movement_index"))
     field("UH-VO2Max", act.get("vo2_max"))
+    field("UH-Glucose-Avg", met.get("glucose_avg"))
+    field("UH-Glucose-Var", met.get("glucose_variability"))
+    field("UH-Metabolic-Score", met.get("metabolic_score"))
+    field("UH-HbA1c", met.get("hba1c"))
+    field("UH-TimeInTarget", met.get("time_in_target"))
+    for slug, v in sorted(extras.items()):
+        field("UH-" + slug.replace("_", "-").title(), v)
     if home:
         field("Home-AQI", home.get("aqi"))
         field("Home-CO2", home.get("co2"))

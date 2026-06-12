@@ -108,3 +108,21 @@ assert.deepEqual(alignPairs(hd, metric, "walk", 0), [
 ], "same-day alignment");
 
 console.log("PASS: habit correlation math OK");
+
+// --- dynamic metric discovery (Worker extras passthrough) ---
+const { discoverMetrics, METRICS, buildMetricSeries, defaultPrefs } = await import("./data.bundle.mjs");
+
+const dynRows = [
+  { date: "2026-06-10", values: { ultrahuman_hrv: 44, ultrahuman_vitamin_d: 4500, ultrahuman_glucose_avg: 102 } },
+  { date: "2026-06-11", values: { ultrahuman_vitamin_d: 3000, fitbit_zone_minutes: 32 } },
+];
+const dyn = discoverMetrics(dynRows);
+assert.deepEqual(dyn.map((m) => m.key), ["vitamin_d", "zone_minutes"], "extras discovered, canonical keys excluded");
+assert.equal(dyn[0].label, "Vitamin D", "extra label title-cased");
+assert.equal(dyn[0].group, "Other", "extras grouped under Other");
+assert.ok(METRICS.some((m) => m.key === "glucose_avg" && m.group === "Metabolic"), "metabolic metric registered");
+const dynSeries = buildMetricSeries(dyn[0], dynRows, defaultPrefs());
+assert.deepEqual(dynSeries.perDevice[0].points, [4500, 3000], "dynamic metric charts from rows");
+assert.equal(discoverMetrics([]).length, 0, "no rows -> no dynamic metrics");
+
+console.log("PASS: dynamic metric discovery OK");

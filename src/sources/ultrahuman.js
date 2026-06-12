@@ -10,11 +10,56 @@ export const RING_URL = 'https://partner.ultrahuman.com/api/v1/partner/daily_met
 export const HOME_URL = 'https://partner.ultrahuman.com/api/v1/partner/home_metrics';
 
 // daily_metrics + (presumably) home_metrics return: data.metrics[<date>] = [ {type, object}, ... ]
+// The /api/v1/metrics?email= variant returns the same items as data.metric_data[].
 function metricsArray(json) {
   const root = json?.data?.metrics;
-  if (!root) return null;
-  const dateKey = Object.keys(root)[0];
-  return root[dateKey] || null;
+  if (root) {
+    const dateKey = Object.keys(root)[0];
+    return root[dateKey] || null;
+  }
+  return json?.data?.metric_data || null;
+}
+
+// Types we extract explicitly below. Anything else lands in ring.extra (see
+// parseExtras) so new upstream metrics — PowerPlugs included, if Ultrahuman ever
+// exposes them via the partner API — flow through without a code change here.
+const KNOWN_TYPES = new Set([
+  'sleep', 'steps', 'spo2', 'temp', 'hrv', 'avg_sleep_hrv', 'night_rhr', 'sleep_rhr',
+  'vo2_max', 'active_minutes', 'movement_index', 'recovery_index', 'hr',
+  'glucose', 'average_glucose', 'metabolic_score', 'glucose_variability', 'hba1c',
+  'time_in_target',
+]);
+const MAX_EXTRAS = 30;
+
+// Extra metric types become YAML frontmatter keys in the vault downstream, so
+// names are reduced to a strict [a-z0-9_] slug and values to finite numbers.
+function extraSlug(type) {
+  const s = String(type).trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 40);
+  return /^[a-z]/.test(s) ? s : '';
+}
+
+function simpleNumber(obj) {
+  if (typeof obj === 'number' && Number.isFinite(obj)) return obj;
+  if (!obj || typeof obj !== 'object') return undefined;
+  for (const k of ['value', 'avg', 'total', 'score', 'index']) {
+    const v = obj[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return undefined;
+}
+
+function parseExtras(items) {
+  const extra = {};
+  let count = 0;
+  for (const m of items) {
+    if (!m || KNOWN_TYPES.has(m.type) || count >= MAX_EXTRAS) continue;
+    const slug = extraSlug(m.type);
+    const v = simpleNumber(m.object);
+    if (!slug || v === undefined || slug in extra) continue;
+    extra[slug] = v;
+    count++;
+  }
+  return extra;
 }
 
 export function emptyRing() {
@@ -23,6 +68,8 @@ export function emptyRing() {
     sleepScore: null, cycles: null, alertness: null,
     sleepSec: 0, remSec: 0, deepSec: 0, lightSec: 0, timeInBedSec: 0,
     spo2: 0, tempC: 0,
+    glucoseAvg: null, metabolicScore: null, glucoseVariability: null, hba1c: null,
+    timeInTarget: null, extra: {},
   };
 }
 
@@ -46,6 +93,13 @@ export function parseRing(json) {
   const activeObj = items.find((m) => m.type === 'active_minutes')?.object;
   const moveObj = items.find((m) => m.type === 'movement_index')?.object;
   const recObj = items.find((m) => m.type === 'recovery_index')?.object;
+  // CGM / metabolic family (M1 users; documented in the partner API schema).
+  const glucoseObj = items.find((m) => m.type === 'glucose')?.object;
+  const avgGlucoseObj = items.find((m) => m.type === 'average_glucose')?.object;
+  const metScoreObj = items.find((m) => m.type === 'metabolic_score')?.object;
+  const glucoseVarObj = items.find((m) => m.type === 'glucose_variability')?.object;
+  const hba1cObj = items.find((m) => m.type === 'hba1c')?.object;
+  const titObj = items.find((m) => m.type === 'time_in_target')?.object;
 
   let spo2 = 0;
   if (sleep?.spo2?.value) spo2 = sleep.spo2.value;
@@ -84,6 +138,12 @@ export function parseRing(json) {
     timeInBedSec: getDurationInSeconds(sleep, 'time_in_bed'),
     spo2,
     tempC,
+    glucoseAvg: simpleNumber(avgGlucoseObj) ?? (Math.round(getAverage(glucoseObj, true)) || null),
+    metabolicScore: simpleNumber(metScoreObj) ?? null,
+    glucoseVariability: simpleNumber(glucoseVarObj) ?? null,
+    hba1c: simpleNumber(hba1cObj) ?? null,
+    timeInTarget: simpleNumber(titObj) ?? null,
+    extra: parseExtras(items),
   };
 }
 

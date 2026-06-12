@@ -40,10 +40,18 @@ Optional overrides inside the block:
 ```health-dashboard
 folder: Health
 range: 90        # 30 / 60 / 90 / all
-groups: Sleep, Heart, Activity
+groups: Sleep, Heart, Activity, Metabolic, Other
 ```
 ````
 Range, weighting mode, custom weights, and per-graph tiers are also editable live in the dashboard and persist in plugin settings.
+
+Beyond the canonical groups, **Metabolic** carries the Ultrahuman CGM family
+(avg glucose, variability, metabolic score, HbA1c, time in target) and **Other**
+holds *dynamic metrics*: any `ultrahuman_<name>` (or other device-prefixed) frontmatter
+key the exporter wrote that isn't canonical — e.g. new Ultrahuman metric types passed
+through by the Worker — charts and correlates automatically, no plugin update needed.
+Novel metrics default to "higher is better" for correlation coloring, so read those
+colors as hints.
 
 ## Habits & correlations
 Log habits as frontmatter in any note that resolves to a day — daily notes work as-is

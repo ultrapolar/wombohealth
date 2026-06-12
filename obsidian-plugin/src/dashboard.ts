@@ -7,6 +7,7 @@ import { App } from "obsidian";
 import {
   DEVICES, DEVICE_LABEL, DEVICE_COLOR, METRICS, GROUPS, Device, Prefs, WeightMode, HabitLagMode,
   DayRow, MetricDef, loadHealthData, filterRange, buildMetricSeries, weightFor, effectiveWeights,
+  discoverMetrics,
 } from "./data";
 import { loadHabits, habitLabel, slugify } from "./habits";
 import { alignPairs, habitEffect } from "./stats";
@@ -67,7 +68,10 @@ export function renderDashboard(
   const rows = filterRange(rowsAll, prefs.rangeDays);
   const accent = cssAccent(root);
   const groups = groupsFilter && groupsFilter.length ? groupsFilter : GROUPS;
-  const metricsInScope = METRICS.filter((m) => groups.includes(m.group));
+  // Canonical metrics plus any dynamic ones discovered in the data (Worker
+  // extras passthrough — e.g. future Ultrahuman PowerPlug metrics).
+  const allMetrics = [...METRICS, ...discoverMetrics(rowsAll)];
+  const metricsInScope = allMetrics.filter((m) => groups.includes(m.group));
 
   // ---- controls ----
   const controls = root.createDiv("thd-controls");

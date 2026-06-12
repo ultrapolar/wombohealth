@@ -4,13 +4,22 @@ import builtins from "builtin-modules";
 
 const mode = process.argv[2];
 
-// `node esbuild.config.mjs stats` → bundle the pure math module for node tests.
+// `node esbuild.config.mjs stats` → bundle the pure modules for node tests.
+// data.ts only uses `obsidian` for types, so externalizing it bundles clean.
 if (mode === "stats") {
   await esbuild.build({
     entryPoints: ["src/stats.ts"],
     bundle: true,
     format: "esm",
     outfile: "test/stats.bundle.mjs",
+    logLevel: "info",
+  });
+  await esbuild.build({
+    entryPoints: ["src/data.ts"],
+    bundle: true,
+    external: ["obsidian"],
+    format: "esm",
+    outfile: "test/data.bundle.mjs",
     logLevel: "info",
   });
   process.exit(0);
