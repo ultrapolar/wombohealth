@@ -75,13 +75,21 @@ var KNOWN_DYNAMIC = {
   nightly_recharge_status: { label: "Nightly Recharge status", better: "high" },
   sleep_charge: { label: "Sleep charge", better: "high" },
   sleep_continuity: { label: "Sleep continuity", better: "high" },
+  sleep_cycles: { label: "Sleep cycles", better: "high" },
+  sleep_rating: { label: "Sleep rating (self)", better: "high" },
+  sleep_duration_score: { label: "Sleep duration score", better: "high" },
+  sleep_solidity_score: { label: "Sleep solidity score", better: "high" },
+  sleep_regeneration_score: { label: "Sleep regeneration score", better: "high" },
   alertness_grade: { label: "Alertness grade (SleepWise)", better: "high" },
   beat_to_beat_avg: { label: "Mean RR interval", unit: "ms", better: "high" },
   // Samsung wellness scores
   antioxidant_index: { label: "Antioxidant index", better: "high" },
   energy_score: { label: "Energy score", better: "high" },
   ages_index: { label: "AGEs index", better: "low" },
-  stress: { label: "Stress", better: "low" }
+  stress: { label: "Stress", better: "low" },
+  skin_temp_c: { label: "Skin temp", unit: "\xB0C", better: "high" },
+  // Hypothetical/future Ultrahuman PowerPlug metrics
+  vitamin_d: { label: "Vitamin D", better: "high" }
 };
 function discoverMetrics(rows) {
   const found = /* @__PURE__ */ new Set();

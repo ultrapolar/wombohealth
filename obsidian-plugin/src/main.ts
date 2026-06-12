@@ -4,7 +4,7 @@
 // are loaded/persisted with Obsidian's load/saveData.
 import { App, Modal, Notice, Plugin, PluginSettingTab, Setting, Editor, TFile, normalizePath } from "obsidian";
 import { Prefs, defaultPrefs, WeightMode } from "./data";
-import { slugify, habitLabel } from "./habits";
+import { slugify, habitLabel, habitValue } from "./habits";
 import { renderDashboard } from "./dashboard";
 
 // Obsidian bundles moment and exposes it at runtime; the typed re-export isn't
@@ -76,6 +76,10 @@ export default class HealthDashboardPlugin extends Plugin {
 class HabitLogModal extends Modal {
   plugin: HealthDashboardPlugin;
   values = new Map<string, boolean>();
+  // Frontmatter keys as they actually appear in the note (e.g. "Habit_Meditation"),
+  // so saving writes back to the existing key instead of a contradictory twin.
+  origKeys = new Map<string, string>();
+  origVals = new Map<string, unknown>();
   newHabit = "";
 
   constructor(app: App, plugin: HealthDashboardPlugin) {
@@ -98,7 +102,9 @@ class HabitLogModal extends Modal {
     contentEl.createDiv({ text: `→ ${this.notePath()}`, cls: "setting-item-description" });
 
     // Pre-fill from today's note, and include any habits already logged there
-    // that aren't in the configured set.
+    // that aren't in the configured set. Keys are matched by slug (so a
+    // hand-typed "Habit_Meditation" still pre-fills) and remembered verbatim
+    // so Save writes back to the same key.
     const file = this.app.vault.getAbstractFileByPath(this.notePath());
     const fm = file instanceof TFile ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
     const names = [...prefs.habitList.map(slugify).filter(Boolean)];
@@ -107,16 +113,20 @@ class HabitLogModal extends Modal {
         const lk = k.toLowerCase();
         if (!lk.startsWith(prefix)) continue;
         const n = slugify(lk.slice(prefix.length));
-        if (n && !names.includes(n)) names.push(n);
+        if (!n) continue;
+        this.origKeys.set(n, k);
+        this.origVals.set(n, fm[k]);
+        if (!names.includes(n)) names.push(n);
       }
     }
 
     for (const name of names) {
-      const raw = fm?.[prefix + name];
-      const cur = raw === true || raw === 1 || (typeof raw === "number" && raw > 0) || raw === "true";
+      const cur = (habitValue(this.origVals.get(name)) ?? 0) > 0;
       this.values.set(name, cur);
+      const raw = this.origVals.get(name);
+      const qty = typeof raw === "number" && raw > 1 ? ` (${raw})` : "";
       new Setting(contentEl)
-        .setName(habitLabel(name))
+        .setName(habitLabel(name) + qty)
         .addToggle((t) => t.setValue(cur).onChange((v) => this.values.set(name, v)));
     }
 
@@ -151,7 +161,14 @@ class HabitLogModal extends Modal {
       file = await this.app.vault.create(path, "");
     }
     await this.app.fileManager.processFrontMatter(file as TFile, (front) => {
-      for (const [name, done] of this.values) front[prefix + name] = done;
+      for (const [name, done] of this.values) {
+        const key = this.origKeys.get(name) ?? prefix + name;
+        const raw = this.origVals.get(name);
+        // A quantity habit (habit_walk_min: 25) left "on" keeps its number —
+        // only an actual toggle change overwrites it with a boolean.
+        if (done && typeof raw === "number" && raw > 0) continue;
+        front[key] = done;
+      }
     });
     new Notice(`Logged ${[...this.values.values()].filter(Boolean).length} habit(s) for today.`);
     this.close();

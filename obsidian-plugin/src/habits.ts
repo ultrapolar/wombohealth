@@ -31,7 +31,8 @@ function noteDate(fmDate: unknown, basename: string): string | null {
 
 // Frontmatter values arrive as booleans, numbers, or strings depending on how
 // the user typed them; normalize all the obvious spellings of "done".
-function habitValue(raw: unknown): number | null {
+// Exported so the quick-log modal and this loader agree on what counts as done.
+export function habitValue(raw: unknown): number | null {
   if (typeof raw === "boolean") return raw ? 1 : 0;
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
   if (typeof raw === "string") {
@@ -44,8 +45,14 @@ function habitValue(raw: unknown): number | null {
   return null;
 }
 
+// Matches the Worker/exporter slug rule (lowercase, spaces -> _, strip
+// punctuation, 40-char cap) so a habit logged from the phone and the same
+// habit logged in Obsidian merge into ONE series instead of fragmenting
+// ("Walk (min)" -> walk_min on both paths). Reading is lenient on one point:
+// digit-first names are kept here (hand-typed `habit_5k: true` still loads)
+// even though the Worker rejects them.
 export function slugify(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, "_");
+  return name.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "").slice(0, 40);
 }
 
 export function habitLabel(slug: string): string {
@@ -57,11 +64,19 @@ export function loadHabits(
   app: App,
   folder: string,
   prefix: string,
+  healthFolder = "",
 ): { days: HabitDay[]; habits: string[] } {
   const scope = folder.trim().replace(/\/+$/, "");
   const pathPrefix = scope ? scope + "/" : ""; // "" scans the whole vault
   const keyPrefix = (prefix.trim() || "habit_").toLowerCase();
+  // Health/<date>.md files are regenerated from Worker data, so hand-edited
+  // notes outrank them: Health values only FILL keys no other note set for the
+  // day. Without this, a fat-fingered widget POST could never be un-logged
+  // (the old Math.max merge ratcheted values upward forever).
+  const healthPrefix = healthFolder.trim().replace(/\/+$/, "");
+  const lowPriority = healthPrefix ? healthPrefix + "/" : null;
   const byDate = new Map<string, Record<string, number>>();
+  const fillByDate = new Map<string, Record<string, number>>();
   const names = new Set<string>();
 
   for (const f of app.vault.getMarkdownFiles()) {
@@ -93,10 +108,20 @@ export function loadHabits(
 
     const date = noteDate(fm.date, f.basename);
     if (!date) continue;
-    const cur = byDate.get(date) ?? {};
+    const tier = lowPriority && f.path.startsWith(lowPriority) ? fillByDate : byDate;
+    const cur = tier.get(date) ?? {};
     for (const [n, v] of Object.entries(found)) {
       cur[n] = Math.max(cur[n] ?? 0, v);
       names.add(n);
+    }
+    tier.set(date, cur);
+  }
+
+  // Health-file values fill gaps only; hand-logged values win outright.
+  for (const [date, fills] of fillByDate) {
+    const cur = byDate.get(date) ?? {};
+    for (const [n, v] of Object.entries(fills)) {
+      if (!(n in cur)) cur[n] = v;
     }
     byDate.set(date, cur);
   }

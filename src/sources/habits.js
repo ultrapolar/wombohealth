@@ -6,44 +6,38 @@
 // frontmatter into Health/<date>.md, where the dashboard plugin's Habits tab and
 // Dataview both pick them up.
 //
-// Accepted POST bodies (mix and match):
+// Accepted POST bodies (mix and match; the `habits` object wins over `done` for
+// the same name since it's processed last):
 //   { "date": "2026-06-11", "done": ["supplements", "meditation"] }
 //   { "date": "2026-06-11", "habits": { "intentional_walk": 1, "walk_min": 25, "alcohol": 0 } }
 //
 // Unlike samsung/wyze, ingest MERGES with the day's existing entry (per-key, last
 // write wins) so each habit can be posted by its own button as the day goes on.
+// Caveat: the merge is a read-modify-write on eventually-consistent KV, so two
+// POSTs landing within the propagation window on different PoPs can lose one
+// update. For taps seconds apart on the same phone this is fine in practice;
+// batch multiple habits into one POST when you can.
+import { slugKey, coerceNum } from '../lib/util.js';
 
 export const id = 'habits';
 
-const MAX_HABITS = 50;
-const MAX_NAME_LEN = 40;
+const MAX_HABITS = 50; // cap per stored day, not just per request
 const MAX_VALUE = 100000;
 
-// Habit names end up as YAML frontmatter keys in the vault, so they're reduced to
-// a strict [a-z0-9_] slug — pushed payloads can never inject markup or YAML.
-function slug(name) {
-  const s = String(name).trim().toLowerCase()
-    .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_]/g, '')
-    .slice(0, MAX_NAME_LEN);
-  return /^[a-z]/.test(s) ? s : '';
-}
-
 function num(v) {
-  if (typeof v === 'boolean') return v ? 1 : 0;
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
-  if (!Number.isFinite(n)) return undefined;
-  return Math.max(0, Math.min(MAX_VALUE, n));
+  const n = coerceNum(v);
+  return n === undefined ? undefined : Math.max(0, Math.min(MAX_VALUE, n));
 }
 
 export function sanitize(body) {
   const out = {};
-  let count = 0;
   const add = (name, value) => {
-    const k = slug(name);
+    const k = slugKey(name);
     const v = num(value);
-    if (!k || v === undefined || count >= MAX_HABITS) return;
-    if (!(k in out)) count++;
+    if (!k || v === undefined) return;
+    // Updates to already-present keys are always allowed; only NEW keys count
+    // against the cap (so a re-posted correction is never silently dropped).
+    if (!(k in out) && Object.keys(out).length >= MAX_HABITS) return;
     out[k] = v;
   };
   const done = body?.done;
@@ -61,8 +55,16 @@ export async function getDay(env, date) {
   return Object.keys(raw).length ? raw : null;
 }
 
+// Merge into the day's record and return what was stored. Existing keys are
+// kept preferentially when the cap is hit, so the record can't grow unbounded
+// across many POSTs.
 export async function ingest(env, date, body) {
   const clean = sanitize(body);
   const existing = (await env.KV_STORE.get(`habits_${date}`, { type: 'json' })) || {};
-  await env.KV_STORE.put(`habits_${date}`, JSON.stringify({ ...existing, ...clean }));
+  const merged = { ...existing };
+  for (const [k, v] of Object.entries(clean)) {
+    if (k in merged || Object.keys(merged).length < MAX_HABITS) merged[k] = v;
+  }
+  await env.KV_STORE.put(`habits_${date}`, JSON.stringify(merged));
+  return merged;
 }

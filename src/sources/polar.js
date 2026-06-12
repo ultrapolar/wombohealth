@@ -132,14 +132,24 @@ export function alertnessForDate(list, date) {
   return list.find((a) => typeof a?.sleep_period_end_time === 'string' && a.sleep_period_end_time.startsWith(date)) || null;
 }
 
+// The SleepWise endpoint returns a recent window with no date filter, so for
+// historical backfill (older than this) a fetch can never match — skip it.
+const ALERTNESS_MAX_AGE_DAYS = 14;
+
 export async function getDay(env, date) {
   const t = await loadTokens(env, id);
   if (!t?.access_token) return null;
+  const ageDays = (Date.now() - Date.parse(date)) / 86400000;
   const [sleep, recharge, alertnessList] = await Promise.all([
     get(t.access_token, `/v3/users/sleep/${date}`),
     get(t.access_token, `/v3/users/nightly-recharge/${date}`),
-    get(t.access_token, '/v3/users/sleepwise/alertness').catch(() => null), // beta; best-effort
+    ageDays <= ALERTNESS_MAX_AGE_DAYS
+      ? get(t.access_token, '/v3/users/sleepwise/alertness').catch(() => null) // beta; best-effort
+      : Promise.resolve(null),
   ]);
-  if (!sleep && !recharge) return { connected: true, sleep: null, activity: null, vitals: {}, extra: {} };
-  return normalize({ sleep, recharge, alertness: alertnessForDate(alertnessList, date) });
+  const alertness = alertnessForDate(alertnessList, date);
+  if (!sleep && !recharge && !alertness) {
+    return { connected: true, sleep: null, activity: null, vitals: {}, extra: {} };
+  }
+  return normalize({ sleep, recharge, alertness });
 }

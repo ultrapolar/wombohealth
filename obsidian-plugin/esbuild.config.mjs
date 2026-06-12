@@ -22,6 +22,14 @@ if (mode === "stats") {
     outfile: "test/data.bundle.mjs",
     logLevel: "info",
   });
+  await esbuild.build({
+    entryPoints: ["src/habits.ts"],
+    bundle: true,
+    external: ["obsidian"],
+    format: "esm",
+    outfile: "test/habits.bundle.mjs",
+    logLevel: "info",
+  });
   process.exit(0);
 }
 

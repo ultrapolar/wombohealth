@@ -10,6 +10,8 @@
 //   weight_kg, weight_lb, bmi, body_fat_pct, muscle_mass_kg, body_water_pct,
 //   bmr_kcal, visceral_fat, bone_mass_kg, metabolic_age, protein_pct } }
 
+import { coerceNum } from '../lib/util.js';
+
 export const id = 'wyze';
 
 const STALE_MS = 21 * 24 * 60 * 60 * 1000; // don't carry a weigh-in forward longer than this
@@ -21,10 +23,7 @@ const BODY_FIELDS = [
   'bmr_kcal', 'visceral_fat', 'bone_mass_kg', 'metabolic_age', 'protein_pct',
 ];
 
-function num(v) {
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
-  return Number.isFinite(n) ? n : undefined;
-}
+const num = coerceNum;
 
 export function sanitize(payload) {
   const src = payload?.body && typeof payload.body === 'object' ? payload.body : payload;

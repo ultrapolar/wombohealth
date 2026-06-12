@@ -98,8 +98,11 @@ Details that matter for honest numbers:
   didn't log anything are skipped, not assumed habit-free. On rest days log an empty
   `habits: []` (or `habit_x: false`) so "without" days exist.
 - **Day lag.** *Smart* (default) compares sleep/heart metrics against the **next
-  morning's** reading — tonight's sleep reflects today's habits — and activity
-  against the same day. Force *Same day* or *Next morning* with the toggle.
+  morning's** reading — tonight's sleep reflects today's habits — and everything
+  else (activity, glucose/metabolic, wellness scores, dynamic extras) against the
+  same day. Force *Same day* or *Next morning* with the toggle.
+- **Scope.** Correlations always run against **all** metrics with data — a
+  block-level `groups:` override filters the chart tabs, not the Habits analysis.
 - **Gating.** A metric row needs 5+ overlapping days, and r/Δ% need 3+ days on each
   side of the split, before anything is reported.
 - **Direction-aware coloring.** Green means "lines up with this metric improving"

@@ -1,6 +1,6 @@
 // Ultrahuman source adapter: Ring (daily_metrics) + Home (air quality).
 // Parsing is split from fetching so the parsers can be unit-tested on fixtures.
-import { getValue, getAverage, getDurationInSeconds } from '../lib/util.js';
+import { getValue, getAverage, getDurationInSeconds, slugKey } from '../lib/util.js';
 
 export const RING_URL = 'https://partner.ultrahuman.com/api/v1/partner/daily_metrics';
 
@@ -11,13 +11,16 @@ export const HOME_URL = 'https://partner.ultrahuman.com/api/v1/partner/home_metr
 
 // daily_metrics + (presumably) home_metrics return: data.metrics[<date>] = [ {type, object}, ... ]
 // The /api/v1/metrics?email= variant returns the same items as data.metric_data[].
+// Anything that isn't an array degrades to null (-> emptyRing) instead of throwing.
 function metricsArray(json) {
   const root = json?.data?.metrics;
-  if (root) {
+  if (root && typeof root === 'object') {
     const dateKey = Object.keys(root)[0];
-    return root[dateKey] || null;
+    const items = root[dateKey];
+    return Array.isArray(items) ? items : null;
   }
-  return json?.data?.metric_data || null;
+  const flat = json?.data?.metric_data;
+  return Array.isArray(flat) ? flat : null;
 }
 
 // Types we extract explicitly below. Anything else lands in ring.extra (see
@@ -32,11 +35,8 @@ const KNOWN_TYPES = new Set([
 const MAX_EXTRAS = 30;
 
 // Extra metric types become YAML frontmatter keys in the vault downstream, so
-// names are reduced to a strict [a-z0-9_] slug and values to finite numbers.
-function extraSlug(type) {
-  const s = String(type).trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 40);
-  return /^[a-z]/.test(s) ? s : '';
-}
+// names go through the shared slug sanitizer and values must be finite numbers.
+const extraSlug = slugKey;
 
 function simpleNumber(obj) {
   if (typeof obj === 'number' && Number.isFinite(obj)) return obj;
@@ -73,8 +73,18 @@ export function emptyRing() {
   };
 }
 
+// "Empty" drives the display's yesterday-fallback: no sleep/steps/HRV means the
+// ring hasn't synced. A day can still carry CGM/metabolic or extra metrics —
+// use ringHasData to decide whether the day is worth caching/serving as-is.
 export function ringIsEmpty(r) {
   return !r || ((r.sleepSec || 0) === 0 && (r.steps || 0) === 0 && (r.hrv || 0) === 0);
+}
+
+export function ringHasData(r) {
+  if (!r) return false;
+  if (!ringIsEmpty(r)) return true;
+  return [r.glucoseAvg, r.metabolicScore, r.glucoseVariability, r.hba1c, r.timeInTarget]
+    .some((v) => v != null) || Object.keys(r.extra || {}).length > 0;
 }
 
 // Parse a daily_metrics response into a normalized ring object. Pure/testable.

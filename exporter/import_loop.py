@@ -56,19 +56,23 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None
+from export import _slug as slugify, load_config  # noqa: E402 — same-dir sibling; matches the Worker's slug rule
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CHECKMARKS_RE = re.compile(r"^(\d{3}) .*/Checkmarks\.csv$")
 
+# uhabits Entry.kt sentinels, shared by both backup formats.
+SENTINELS = {"YES_MANUAL": 2, "YES_AUTO": 1, "NO": 0, "SKIP": 3, "UNKNOWN": -1}
 
-def slugify(name: str) -> str:
-    """Match the Worker's habit-name slug so dry-run output equals what lands in KV."""
-    s = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
-    return s if re.match(r"^[a-z]", s) else ""
+
+def decode_entry(value: int, numerical: bool) -> float | int | None:
+    """One Loop entry int -> habit value, or None to omit the day.
+    Single decoder for CSV and SQLite so the two formats can't diverge."""
+    if numerical:
+        if value in (SENTINELS["SKIP"], SENTINELS["UNKNOWN"]) or value < 0:
+            return None
+        return value // 1000 if value % 1000 == 0 else value / 1000
+    return {2: 1, 1: 0, 0: 0}.get(value)  # SKIP/UNKNOWN -> None
 
 
 def parse_habits_csv(text: str) -> dict[int, dict]:
@@ -87,20 +91,15 @@ def parse_habits_csv(text: str) -> dict[int, dict]:
 
 
 def checkmark_value(raw: str, numerical: bool) -> float | int | None:
-    """One Checkmarks.csv Value cell -> habit value, or None to omit the day."""
+    """One Checkmarks.csv Value cell -> habit value, or None to omit the day.
+    Cells are sentinel words or raw ints (numerical habits, amount*1000); map
+    words to their Entry.kt ints and share decode_entry with the SQLite path."""
     raw = (raw or "").strip()
-    if numerical:
-        # Entry sentinels still render as words when the stored int collides
-        # with them (formattedValue matches on the raw int), so handle both.
-        if raw == "NO":
-            return 0
-        if re.fullmatch(r"-?\d+", raw):
-            n = int(raw)
-            if n < 0:
-                return None
-            return n // 1000 if n % 1000 == 0 else n / 1000
-        return None
-    return {"YES_MANUAL": 1, "NO": 0, "YES_AUTO": 0}.get(raw)
+    if raw in SENTINELS:
+        return decode_entry(SENTINELS[raw], numerical)
+    if re.fullmatch(r"-?\d+", raw):
+        return decode_entry(int(raw), numerical)
+    return None
 
 
 def parse_archive(src) -> dict[str, dict[str, float | int]]:
@@ -147,14 +146,9 @@ def parse_db(path) -> dict[str, dict[str, float | int]]:
             if not slug or ts is None or value is None:
                 continue
             date = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-            if int(htype or 0) == 1:  # NUMERICAL
-                if value == 3 or value < 0:  # SKIP sentinel / invalid
-                    continue
-                v = value // 1000 if value % 1000 == 0 else value / 1000
-            else:
-                v = {2: 1, 1: 0, 0: 0}.get(value)  # SKIP(3)/UNKNOWN omitted
-                if v is None:
-                    continue
+            v = decode_entry(int(value), int(htype or 0) == 1)
+            if v is None:
+                continue
             days.setdefault(date, {})[slug] = v
     finally:
         con.close()
@@ -196,13 +190,6 @@ def post_days(worker: str, key: str, days: dict, dry_run: bool) -> int:
             failures += 1
             print(f"{date}: FAILED ({e})", file=sys.stderr)
     return failures
-
-
-def load_config(path: Path) -> dict:
-    if not path.exists() or tomllib is None:
-        return {}
-    with open(path, "rb") as fh:
-        return tomllib.load(fh)
 
 
 def selftest() -> None:

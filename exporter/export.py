@@ -114,21 +114,16 @@ def _sv(src, *path):
     return d
 
 
+def _slug(name) -> str:
+    """The shared key sanitizer — must match the Worker's slugKey() so habit and
+    extras keys agree between Worker-ingested and exporter-written frontmatter."""
+    s = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
+    return s if re.match(r"^[a-z]", s) else ""
+
+
 def _habits(data: dict) -> dict:
     """Sanitized {slug: number} habits from the unified payload (or {})."""
-    out = {}
-    raw = data.get("habits")
-    if not isinstance(raw, dict):
-        return out
-    for name, v in raw.items():
-        slug = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
-        if not slug or not re.match(r"^[a-z]", slug):
-            continue
-        if isinstance(v, bool):
-            out[slug] = 1 if v else 0
-        elif isinstance(v, (int, float)):
-            out[slug] = v
-    return out
+    return _sanitize_extras(data.get("habits"), set())
 
 
 # Canonical per-device metrics for the multi-source dashboard plugin.
@@ -144,34 +139,39 @@ UH_METABOLIC = ("glucose_avg", "metabolic_score", "glucose_variability", "hba1c"
 
 
 def _sanitize_extras(raw, reserved: set) -> dict:
-    """Sanitized {slug: number} from a source's extra dict, skipping reserved keys."""
+    """Sanitized {slug: number} from an untrusted dict, skipping reserved keys.
+    Booleans coerce to 1/0 (habit logs use them); other non-numbers drop."""
     out = {}
     if not isinstance(raw, dict):
         return out
     for name, v in raw.items():
-        slug = re.sub(r"[^a-z0-9_]", "", str(name).strip().lower().replace(" ", "_"))[:40]
-        if not slug or not re.match(r"^[a-z]", slug) or slug in reserved:
+        slug = _slug(name)
+        if not slug or slug in reserved:
             continue
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
-            continue
-        out[slug] = v
+        if isinstance(v, bool):
+            out[slug] = 1 if v else 0
+        elif isinstance(v, (int, float)):
+            out[slug] = v
     return out
+
+
+# Extras may never shadow a canonical or metabolic key — the same rule for every
+# source, so whether a key is filtered doesn't depend on which path handled it.
+RESERVED_KEYS = frozenset(CANONICAL_METRICS) | frozenset(UH_METABOLIC)
 
 
 def _uh_extras(data: dict) -> dict:
     """Ultrahuman extras passthrough (unknown partner-API metric types)."""
-    reserved = set(CANONICAL_METRICS) | set(UH_METABOLIC)
-    return _sanitize_extras((data.get("ultrahuman") or {}).get("extra"), reserved)
+    return _sanitize_extras((data.get("ultrahuman") or {}).get("extra"), RESERVED_KEYS)
 
 
 def _device_extras(data: dict) -> dict:
     """{device: {slug: number}} extras for each secondary source (Polar ANS
     charge, Samsung wellness scores, ...). Written as <device>_<slug> keys so
     the dashboard plugin discovers them as dynamic metrics."""
-    reserved = set(CANONICAL_METRICS)
     out = {}
-    for dev in ("withings", "fitbit", "polar", "samsung"):
-        extras = _sanitize_extras((data.get(dev) or {}).get("extra"), reserved)
+    for _label, dev in SECONDARY:
+        extras = _sanitize_extras((data.get(dev) or {}).get("extra"), RESERVED_KEYS)
         if extras:
             out[dev] = extras
     return out

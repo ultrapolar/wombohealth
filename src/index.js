@@ -8,7 +8,7 @@
 //   POST /ingest/samsung    -> on-device bridge pushes a day's metrics (sanitized to numbers)
 //   POST /ingest/habits     -> one-tap phone widget logs healthy habits (slugged names, numbers only)
 import { localDateStr, addDays, weeklyChart, trend, isValidDate, timingSafeEqual } from './lib/util.js';
-import { fetchRing, fetchHome, ringIsEmpty, emptyRing, fetchRaw, RING_URL, HOME_URL } from './sources/ultrahuman.js';
+import { fetchRing, fetchHome, ringIsEmpty, ringHasData, emptyRing, fetchRaw, RING_URL, HOME_URL } from './sources/ultrahuman.js';
 import { buildUnified } from './aggregate.js';
 import { buildDisplay } from './display.js';
 import { htmlPage, randomState, saveState, consumeState } from './lib/oauth.js';
@@ -99,8 +99,11 @@ export default {
         return json(out);
       }
 
-      // --- Samsung ingest (sanitized, size-capped) ---
-      if (path === '/ingest/samsung') {
+      // --- Push ingest routes (sanitized, size-capped, key-gated) ---
+      // Each adapter's ingest() drops everything but allowlisted/slugged numbers.
+      if (seg[0] === 'ingest' && seg[1]) {
+        const adapter = { samsung, wyze, habits }[seg[1]];
+        if (!adapter) return json({ error: 'unknown source' }, 404);
         if (!keyOk()) return json({ error: 'unauthorized' }, 401);
         if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
         if (Number(request.headers.get('content-length') || 0) > MAX_INGEST_BYTES) {
@@ -110,38 +113,9 @@ export default {
         if (!body || typeof body !== 'object') return json({ error: 'invalid JSON body' }, 400);
         const date = validDate(url.searchParams.get('date') || body.date);
         if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
-        await samsung.ingest(env, date, body); // ingest() drops everything but allowlisted numbers
-        return json({ ok: true, date });
-      }
-
-      // --- Healthy-habits ingest (one-tap phone widget; merges per-key, sanitized) ---
-      if (path === '/ingest/habits') {
-        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
-        if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
-        if (Number(request.headers.get('content-length') || 0) > MAX_INGEST_BYTES) {
-          return json({ error: 'body too large' }, 413);
-        }
-        const body = await request.json().catch(() => null);
-        if (!body || typeof body !== 'object') return json({ error: 'invalid JSON body' }, 400);
-        const date = validDate(url.searchParams.get('date') || body.date);
-        if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
-        await habits.ingest(env, date, body); // ingest() slugs names, keeps numbers only
-        return json({ ok: true, date, habits: await habits.getDay(env, date) });
-      }
-
-      // --- Wyze scale ingest (body composition; sanitized, size-capped) ---
-      if (path === '/ingest/wyze') {
-        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
-        if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
-        if (Number(request.headers.get('content-length') || 0) > MAX_INGEST_BYTES) {
-          return json({ error: 'body too large' }, 413);
-        }
-        const body = await request.json().catch(() => null);
-        if (!body || typeof body !== 'object') return json({ error: 'invalid JSON body' }, 400);
-        const date = validDate(url.searchParams.get('date') || body.date);
-        if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
-        await wyze.ingest(env, date, body); // ingest() drops everything but allowlisted numbers
-        return json({ ok: true, date });
+        const stored = await adapter.ingest(env, date, body);
+        // habits/samsung ingest return the merged record they wrote; echo it.
+        return json(stored ? { ok: true, date, stored } : { ok: true, date });
       }
 
       // --- debug: raw Ultrahuman responses (to finalize the Home schema) ---
@@ -204,7 +178,9 @@ async function getRing(env, date, token) {
   let ring = await env.KV_STORE.get(`ring_${date}`, { type: 'json' });
   if (!ring) {
     ring = await fetchRing(date, token);
-    if (!ringIsEmpty(ring)) await env.KV_STORE.put(`ring_${date}`, JSON.stringify(ring));
+    // Cache any day with data — including CGM/extras-only days where the ring
+    // itself hasn't synced (ringIsEmpty would call those empty).
+    if (ringHasData(ring)) await env.KV_STORE.put(`ring_${date}`, JSON.stringify(ring));
   }
   return ring;
 }
@@ -254,7 +230,9 @@ async function buildDisplayPayload(env, ctx, { token, tz, stepGoal, homeEnabled,
 
   history[todayStr] = ring.steps;
   ctx.waitUntil(env.KV_STORE.put('step_history', JSON.stringify(history)));
-  ctx.waitUntil(env.KV_STORE.put(`ring_${todayStr}`, JSON.stringify(ring)));
+  // Never cache the yesterday-fallback under today's key — it would poison
+  // /json for the whole day with yesterday's numbers (incl. glucose/extras).
+  if (!stale) ctx.waitUntil(env.KV_STORE.put(`ring_${todayStr}`, JSON.stringify(ring)));
 
   const yRing = (await env.KV_STORE.get(`ring_${addDays(todayStr, -1)}`, { type: 'json' })) || {};
   const hrvTrend = trend(ring.hrv, yRing.hrv).icon;

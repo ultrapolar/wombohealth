@@ -1,6 +1,26 @@
 // Pure helpers shared across the worker. No Workers-runtime APIs are used here,
 // so this module imports cleanly under plain Node for unit testing.
 
+// Reduce an untrusted name to a strict [a-z0-9_] slug (must start with a letter).
+// This is the security boundary that keeps pushed names from injecting YAML or
+// markup into vault frontmatter keys downstream — every source that emits
+// dynamic key names (habits, Ultrahuman extras) must go through it.
+export function slugKey(name, maxLen = 40) {
+  const s = String(name).trim().toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, maxLen);
+  return /^[a-z]/.test(s) ? s : '';
+}
+
+// Coerce an untrusted value to a finite number, or undefined. Shared by all
+// ingest sanitizers so identical payloads behave the same on every endpoint.
+export function coerceNum(v) {
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export function getDurationInSeconds(moduleObj, key) {
   if (!moduleObj || !moduleObj[key]) return 0;
   if (moduleObj[key].seconds) return moduleObj[key].seconds;

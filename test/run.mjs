@@ -4,7 +4,7 @@ import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { parseRing, parseHome } from '../src/sources/ultrahuman.js';
+import { parseRing, parseHome, ringIsEmpty, ringHasData } from '../src/sources/ultrahuman.js';
 import { normalizeSleep as withingsNormalize } from '../src/sources/withings.js';
 import { normalize as fitbitNormalize } from '../src/sources/fitbit.js';
 import { normalize as polarNormalize, alertnessForDate } from '../src/sources/polar.js';
@@ -66,6 +66,13 @@ const glucoseGraphRing = parseRing({
 });
 assert.equal(glucoseGraphRing.glucoseAvg, 105, 'glucose graph averaged ignoring zero dropouts');
 assert.deepEqual(parseRing(load('daily_metrics.sample.json')).extra, {}, 'fixture has no extras');
+// Malformed shapes degrade to emptyRing instead of throwing (500-proofing).
+assert.equal(parseRing({ data: { metric_data: 'oops' } }).steps, 0, 'non-array metric_data tolerated');
+assert.equal(parseRing({ data: { metrics: { '2026-05-30': { not: 'array' } } } }).steps, 0, 'non-array dated metrics tolerated');
+// ringHasData: CGM-only days count as data (for KV caching) though ringIsEmpty stays true (display fallback).
+assert.equal(ringIsEmpty(glucoseGraphRing), true, 'CGM-only day still "empty" for display fallback');
+assert.equal(ringHasData(glucoseGraphRing), true, 'CGM-only day has cacheable data');
+assert.equal(ringHasData(parseRing(null)), false, 'truly empty ring has no data');
 
 // ===== Withings =====
 const w = withingsNormalize({
@@ -245,6 +252,37 @@ assert.equal(Object.keys(hclean).some((k) => k.includes('<')), false, 'habit mar
 assert.equal('5am' in hclean, false, 'habit name must start with a letter');
 assert.equal(hclean.big, 100000, 'habit value clamped');
 assert.equal('' in hclean, false, 'empty habit name dropped');
+
+// --- ingest merge semantics (mock KV) ---
+const mockKV = () => {
+  const store = new Map();
+  return {
+    async get(k, _o) { return store.has(k) ? JSON.parse(store.get(k)) : null; },
+    async put(k, v) { store.set(k, v); },
+  };
+};
+{
+  const env = { KV_STORE: mockKV() };
+  const { ingest: hIngest, getDay: hGetDay } = await import('../src/sources/habits.js');
+  await hIngest(env, '2026-06-11', { done: ['supplements'] });
+  const merged = await hIngest(env, '2026-06-11', { habits: { meditation: 1 } });
+  assert.deepEqual(merged, { supplements: 1, meditation: 1 }, 'habit ingest merges per-key and returns the record');
+  await hIngest(env, '2026-06-11', { habits: { supplements: 0 } });
+  assert.equal((await hGetDay(env, '2026-06-11')).supplements, 0, 'habit re-post corrects existing key');
+}
+{
+  const env = { KV_STORE: mockKV() };
+  const { ingest: sIngest, getDay: sGetDay } = await import('../src/sources/samsung.js');
+  await sIngest(env, '2026-06-11', { sleep: { score: 80, duration_min: 430 }, vitals: { rhr: 55 } });
+  const merged = await sIngest(env, '2026-06-11', { extra: { antioxidant_index: 64 } });
+  assert.equal(merged.sleep.score, 80, 'samsung wellness POST keeps the morning sleep push');
+  assert.equal(merged.extra.antioxidant_index, 64, 'samsung wellness POST lands');
+  await sIngest(env, '2026-06-11', { vitals: { rhr: 54, spo2: 97 } });
+  const day = await sGetDay(env, '2026-06-11');
+  assert.equal(day.vitals.rhr, 54, 'samsung per-field merge: later value wins');
+  assert.equal(day.vitals.spo2, 97, 'samsung per-field merge: new field added');
+  assert.equal(day.sleep.duration_min, 430, 'samsung per-field merge: other groups untouched');
+}
 
 const uHabits = buildUnified({ date: '2026-05-30', ring, home, habits: { supplements: 1, meditation: 0 } });
 assert.equal(uHabits.habits.supplements, 1, 'unified carries habits');

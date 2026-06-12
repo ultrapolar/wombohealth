@@ -9,7 +9,7 @@ import {
   DayRow, MetricDef, loadHealthData, filterRange, buildMetricSeries, weightFor, effectiveWeights,
   discoverMetrics,
 } from "./data";
-import { loadHabits, habitLabel, slugify } from "./habits";
+import { loadHabits, habitLabel, slugify, HabitDay } from "./habits";
 import { alignPairs, habitEffect } from "./stats";
 import { renderChart } from "./chart";
 
@@ -51,26 +51,40 @@ export function renderDashboard(
   // Tear down charts from the previous render so observers/listeners don't leak.
   const rootAny = root as unknown as {
     _thdDisposers?: Array<() => void>;
-    _thdCache?: { folder: string; rows: DayRow[] };
+    _thdCache?: {
+      folder: string;
+      rows: DayRow[];
+      dyn: MetricDef[];
+      habitsKey: string;
+      habitsData: ReturnType<typeof loadHabits>;
+    };
   };
   (rootAny._thdDisposers || []).forEach((fn) => fn());
   const disposers: Array<() => void> = [];
   rootAny._thdDisposers = disposers;
 
-  // Cache the parsed Health/ rows so tab/slider/tier interactions don't re-scan the vault.
-  let rowsAll: DayRow[];
-  if (!forceReload && rootAny._thdCache && rootAny._thdCache.folder === prefs.folder) {
-    rowsAll = rootAny._thdCache.rows;
-  } else {
-    rowsAll = loadHealthData(app, prefs.folder);
-    rootAny._thdCache = { folder: prefs.folder, rows: rowsAll };
+  // Cache the parsed Health/ rows, the discovered dynamic metrics, and the
+  // habit scan, so tab/slider/tier interactions don't re-scan the vault.
+  const habitsKey = `${prefs.habitsFolder}|${prefs.habitPrefix}|${prefs.folder}`;
+  let cache = rootAny._thdCache;
+  if (forceReload || !cache || cache.folder !== prefs.folder || cache.habitsKey !== habitsKey) {
+    const rowsAll = loadHealthData(app, prefs.folder);
+    cache = {
+      folder: prefs.folder,
+      rows: rowsAll,
+      dyn: discoverMetrics(rowsAll),
+      habitsKey,
+      habitsData: loadHabits(app, prefs.habitsFolder, prefs.habitPrefix, prefs.folder),
+    };
+    rootAny._thdCache = cache;
   }
+  const rowsAll = cache.rows;
   const rows = filterRange(rowsAll, prefs.rangeDays);
   const accent = cssAccent(root);
   const groups = groupsFilter && groupsFilter.length ? groupsFilter : GROUPS;
   // Canonical metrics plus any dynamic ones discovered in the data (Worker
   // extras passthrough — e.g. future Ultrahuman PowerPlug metrics).
-  const allMetrics = [...METRICS, ...discoverMetrics(rowsAll)];
+  const allMetrics = [...METRICS, ...cache.dyn];
   const metricsInScope = allMetrics.filter((m) => groups.includes(m.group));
 
   // ---- controls ----
@@ -134,7 +148,9 @@ export function renderDashboard(
   const content = root.createDiv("thd-content");
 
   if (active === "habits") {
-    renderHabitsTab(app, content, rows, metricsInScope, prefs, save, rerender);
+    // Correlations always run against ALL metrics — a block-level `groups:`
+    // override is a chart-display filter, not the analysis universe.
+    renderHabitsTab(content, rows, allMetrics, cache.habitsData, prefs, save, rerender);
   } else if (active === "combined") {
     content.createDiv("thd-mtitle").setText("Holistic blend — weighted mean · ±1 SD band · min/max whiskers");
     for (const m of metricsInScope) {
@@ -270,8 +286,10 @@ const MIN_PAIRS = 5; // fewer overlapping days than this and a row isn't worth s
 function lagFor(metric: MetricDef, mode: HabitLagMode): number {
   if (mode === "same") return 0;
   if (mode === "next") return 1;
-  // Smart: sleep/heart are measured the night *after* the habit; activity is same-day.
-  return metric.group === "Activity" ? 0 : 1;
+  // Smart: sleep/heart are measured the night *after* the habit; everything
+  // else (activity, glucose/metabolic, daytime wellness scores, unknown
+  // extras) is a same-day measurement.
+  return metric.group === "Sleep" || metric.group === "Heart" ? 1 : 0;
 }
 
 function fmtMetricValue(m: MetricDef, v: number | null): string {
@@ -290,15 +308,15 @@ function strengthWord(r: number): string {
 }
 
 function renderHabitsTab(
-  app: App,
   content: HTMLElement,
   rows: DayRow[],
   metricsInScope: MetricDef[],
+  habitsData: { days: HabitDay[]; habits: string[] },
   prefs: Prefs,
   save: () => Promise<void>,
   rerender: () => void,
 ): void {
-  const { days, habits } = loadHabits(app, prefs.habitsFolder, prefs.habitPrefix);
+  const { days, habits } = habitsData;
   const allHabits = [...new Set([...habits, ...(prefs.habitList || []).map(slugify).filter(Boolean)])];
   const first = rows[0].date;
   const last = rows[rows.length - 1].date;
@@ -313,13 +331,13 @@ function renderHabitsTab(
   head.createSpan({
     cls: "thd-blend",
     text: prefs.habitLagMode === "smart"
-      ? "Smart: sleep & heart compare against the next morning's reading; activity against the same day."
+      ? "Smart: sleep & heart compare against the next morning's reading; everything else against the same day."
       : prefs.habitLagMode === "next"
         ? "All metrics compare against the day after the habit."
         : "All metrics compare against the same day as the habit.",
   });
 
-  if (!daysInRange.length) {
+  if (!daysInRange.length || !allHabits.length) {
     const empty = content.createDiv("thd-empty");
     const where = prefs.habitsFolder ? `notes under "${prefs.habitsFolder}/"` : "any note";
     empty.createDiv().setText(
@@ -354,13 +372,13 @@ function renderHabitsTab(
     meanByMetric.set(m.key, map);
   }
 
-  const byActivity = [...allHabits].sort((a, b) => {
-    const doneCount = (h: string) => daysInRange.filter((d) => (d.values[h] ?? 0) > 0).length;
-    return doneCount(b) - doneCount(a);
-  });
+  const doneCounts = new Map(
+    allHabits.map((h) => [h, daysInRange.filter((d) => (d.values[h] ?? 0) > 0).length]),
+  );
+  const byActivity = [...allHabits].sort((a, b) => (doneCounts.get(b) ?? 0) - (doneCounts.get(a) ?? 0));
 
   for (const habit of byActivity) {
-    const doneN = daysInRange.filter((d) => (d.values[habit] ?? 0) > 0).length;
+    const doneN = doneCounts.get(habit) ?? 0;
     const card = content.createDiv("thd-metric");
     const title = card.createDiv("thd-mtitle");
     title.setText(habitLabel(habit));

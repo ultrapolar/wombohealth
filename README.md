@@ -139,7 +139,9 @@ bridge can read them, but Samsung's proprietary scores do **not** — the Antiox
 (Galaxy Watch 8 / One UI 8 Watch carotenoid measurement), Energy Score, and AGEs Index exist
 only inside Samsung Health (the Samsung Health Data SDK exposes some, but it's
 partner-approval-gated). Until that changes, log them with a one-tap HTTP Shortcuts widget
-right after you take the measurement — same pattern as habit logging.
+right after you take the measurement — same pattern as habit logging. Ingest merges per
+field within each group, so a midday wellness POST composes with (never wipes) the morning
+bridge's sleep/steps push.
 
 ### 7. Wyze smart scale (optional, body composition)
 Wyze has no official API, so a local Python puller reads your weigh-ins (via the
@@ -253,7 +255,10 @@ curl -X POST "https://<your-worker>/ingest/habits" \
 ```
 Make it one tap on Android with [HTTP Shortcuts](https://http-shortcuts.rmy.ch/) (a home-screen
 widget per habit) or a Tasker/MacroDroid task. Names are slugged and values numeric-only on
-ingest, and repeat POSTs merge per-key, so each habit can have its own button. (If you plan your
+ingest, and repeat POSTs merge per-key, so each habit can have its own button. (One caveat: the
+merge is read-modify-write on eventually-consistent KV, so near-simultaneous POSTs from different
+network paths can race — taps seconds apart from one phone are fine in practice, but batch
+multiple habits into a single POST when you can.) (If you plan your
 day in **Taskito**: it has no public API, webhooks, or automation hooks — its calendar
 integration is import-only — so completions can't be read out of it directly; a one-tap
 widget next to it is the practical bridge.)

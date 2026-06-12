@@ -136,3 +136,21 @@ assert.deepEqual(dynSeries.perDevice[0].points, [4500, 3000], "dynamic metric ch
 assert.equal(discoverMetrics([]).length, 0, "no rows -> no dynamic metrics");
 
 console.log("PASS: dynamic metric discovery OK");
+
+// --- habit helpers: slug rule must match the Worker's, value parsing shared ---
+const { slugify: habitSlug, habitValue } = await import("./habits.bundle.mjs");
+
+assert.equal(habitSlug("Walk (min)"), "walk_min", "punctuation stripped like the Worker");
+assert.equal(habitSlug("late-night snack"), "latenight_snack", "hyphens stripped like the Worker");
+assert.equal(habitSlug("  Intentional Walk  "), "intentional_walk", "trim + spaces to underscore");
+assert.equal(habitSlug("x".repeat(60)).length, 40, "40-char cap like the Worker");
+assert.equal(habitSlug("5k_run"), "5k_run", "digit-first kept on the lenient read side");
+
+assert.equal(habitValue(true), 1, "boolean done");
+assert.equal(habitValue("yes"), 1, "string spelling of done");
+assert.equal(habitValue("done"), 1, "'done' spelling");
+assert.equal(habitValue(25), 25, "quantity preserved");
+assert.equal(habitValue(false), 0, "boolean not-done");
+assert.equal(habitValue("nonsense"), null, "unparseable -> null");
+
+console.log("PASS: habit helpers OK");

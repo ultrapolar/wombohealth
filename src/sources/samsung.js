@@ -23,6 +23,8 @@
 // log them; the exporter writes them as samsung_<key> frontmatter and the
 // dashboard plugin picks them up as dynamic metrics.
 
+import { coerceNum } from '../lib/util.js';
+
 export const id = 'samsung';
 
 export function normalize(raw) {
@@ -50,11 +52,6 @@ const NUM_FIELDS = {
   extra: ['antioxidant_index', 'energy_score', 'ages_index', 'stress', 'skin_temp_c'],
 };
 
-function num(v) {
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
-  return Number.isFinite(n) ? n : undefined;
-}
-
 export function sanitize(body) {
   const out = {};
   for (const [group, keys] of Object.entries(NUM_FIELDS)) {
@@ -62,7 +59,7 @@ export function sanitize(body) {
     if (!src || typeof src !== 'object') continue;
     const clean = {};
     for (const k of keys) {
-      const n = num(src[k]);
+      const n = coerceNum(src[k]);
       if (n !== undefined) clean[k] = n;
     }
     if (Object.keys(clean).length) out[group] = clean;
@@ -70,6 +67,17 @@ export function sanitize(body) {
   return out;
 }
 
+// Merge per field within each group, so the morning Health Connect push and an
+// afternoon wellness-widget POST ({"extra": {...}}) compose instead of the
+// later one replacing the whole day. Same eventual-consistency caveat as
+// habits ingest: batch into one POST when posting in quick succession.
 export async function ingest(env, date, body) {
-  await env.KV_STORE.put(`samsung_${date}`, JSON.stringify(sanitize(body)));
+  const clean = sanitize(body);
+  const existing = (await env.KV_STORE.get(`samsung_${date}`, { type: 'json' })) || {};
+  const merged = { ...existing };
+  for (const [group, fields] of Object.entries(clean)) {
+    merged[group] = { ...(existing[group] || {}), ...fields };
+  }
+  await env.KV_STORE.put(`samsung_${date}`, JSON.stringify(merged));
+  return merged;
 }
