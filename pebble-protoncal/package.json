@@ -1,0 +1,48 @@
+{
+  "name": "proton-cal",
+  "author": "ultrapolar",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Proton Cal",
+    "uuid": "6ef0b826-99fb-4eef-9ab4-37dd7ae66fbe",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "capabilities": ["configurable"],
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "EV_COUNT",
+      "EV_INDEX",
+      "EV_TITLE",
+      "EV_LOC",
+      "EV_START",
+      "EV_DUR",
+      "EV_ALLDAY",
+      "STATUS",
+      "ERROR",
+      "REQUEST_REFRESH",
+      "workerUrl",
+      "exportKey",
+      "pushPins",
+      "timelineApi"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

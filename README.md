@@ -45,6 +45,7 @@ test/
 obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
 pebble/                 # Pebble watchapp: dashboard cards on your wrist (Core Devices SDK)
 pebble-rambles/         # Pebble watchapp: dictate voice notes into the vault's Rambles folder
+pebble-protoncal/       # Pebble watchapp: Proton Calendar agenda + system timeline pins
 ```
 
 ## Setup
@@ -162,6 +163,14 @@ note lands in your vault under `Rambles/YYYY-MM-DD.md`. Starting a note with **"
 `POST /ingest/ramble` (key-gated, size-capped) and the exporter appends them on its normal
 run — or schedule `python export.py --rambles-only` every 15 min for near-real-time sync.
 Set `rambles_folder` in `exporter/config.toml`. See [`pebble-rambles/README.md`](pebble-rambles/README.md).
+
+### 10. Proton Calendar on the watch timeline (optional)
+[`pebble-protoncal/`](pebble-protoncal/) puts **Proton Calendar** where Google Calendar
+normally lives: events are pushed as native **timeline pins** and shown in an in-app agenda.
+Proton has no public API, so the Worker reads the read-only ICS feed from Proton's
+**Share with anyone via link** (set it with `npx wrangler secret put PROTON_ICS_URL`; the
+new `GET /calendar` route parses + expands recurrences server-side). Works with any ICS
+feed, not just Proton. See [`pebble-protoncal/README.md`](pebble-protoncal/README.md).
 
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached

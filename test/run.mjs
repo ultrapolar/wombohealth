@@ -12,6 +12,7 @@ import { normalize as samsungNormalize } from '../src/sources/samsung.js';
 import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
 import { buildUnified } from '../src/aggregate.js';
 import { routeRamble } from '../src/rambles.js';
+import { parseICS, expandEvents } from '../src/calendar.js';
 import { buildDisplay } from '../src/display.js';
 import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
 
@@ -167,6 +168,28 @@ assert.equal(r5.text, 'get eggs', 'keyword still stripped on override');
 assert.equal(routeRamble('todo'), null, 'keyword-only note rejected');
 assert.equal(routeRamble('   '), null, 'blank note rejected');
 assert.equal(routeRamble('todoist sounds nice').category, 'ramble', 'keyword must be a whole word');
+
+// --- Proton/ICS calendar ---
+const ics = readFileSync(join(here, 'fixtures', 'proton.sample.ics'), 'utf8');
+const rawEvents = parseICS(ics);
+assert.equal(rawEvents.length, 4, 'ics vevent count');
+// Window: Fri 2026-06-12 00:00 UTC .. +7 days
+const winStart = Date.UTC(2026, 5, 12);
+const winEnd = winStart + 7 * 86400000;
+const agenda = expandEvents(rawEvents, winStart, winEnd, 'Europe/Zurich');
+const titles = agenda.map((e) => e.title);
+assert.ok(titles.includes('Dentist, Dr. Molar'), 'escaped comma unescaped');
+assert.ok(!titles.includes('Ancient history'), 'past event excluded');
+const folded = agenda.find((e) => e.all_day);
+assert.ok(folded && folded.title.endsWith('folds across lines'), 'folded line + all-day');
+const standups = agenda.filter((e) => e.title === 'Standup');
+// Week of Jun 12-18 has Fri 12, Mon 15 (EXDATE'd), Wed 17 -> 2 instances
+assert.equal(standups.length, 2, 'weekly BYDAY expansion with EXDATE');
+const days = standups.map((e) => new Date(e.start * 1000).getUTCDay()).sort();
+assert.deepEqual(days, [3, 5], 'standup lands Wed+Fri (Mon excluded)');
+// TZID Europe/Zurich 09:15 in June = 07:15 UTC (CEST)
+assert.equal(new Date(standups[0].start * 1000).getUTCHours(), 7, 'TZID converted with DST');
+assert.ok(agenda.every((e, i) => i === 0 || agenda[i - 1].start <= e.start), 'agenda sorted');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);
