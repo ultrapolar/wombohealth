@@ -91,6 +91,9 @@ static Category prv_detect_category(const char *text) {
 
 static void prv_anim_tick(void *ctx) {
   s_anim_timer = NULL;
+  // Preview and error screens are static — let the timer die there instead of
+  // redrawing at 11fps forever; transitions back re-arm via prv_anim_restart.
+  if (s_state == StatePreview || s_state == StateError) return;
   s_anim_phase++;
   if (s_state == StateSaved && s_anim_phase > 14) {
     s_state = StateIdle;
@@ -274,6 +277,7 @@ static void prv_dictation_cb(DictationSession *session, DictationSessionStatus s
     s_state = StatePreview;
   } else if (s_state != StatePreview) {
     s_state = StateIdle;  // cancelled / no speech: back to the mic
+    prv_anim_restart();
   }
   layer_mark_dirty(s_layer);
 }
@@ -330,6 +334,7 @@ static void prv_back_click(ClickRecognizerRef rec, void *ctx) {
   if (s_state == StatePreview || s_state == StateError) {
     s_text[0] = '\0';
     s_state = StateIdle;  // discard, don't exit
+    prv_anim_restart();
     layer_mark_dirty(s_layer);
   } else {
     window_stack_pop_all(true);

@@ -48,9 +48,10 @@ export async function ingest(env, date, body) {
 }
 
 export async function listDays(env, dates) {
+  const lists = await Promise.all(
+    dates.map((d) => env.KV_STORE.get(`rambles_${d}`, { type: 'json' })),
+  );
   const out = {};
-  for (const d of dates) {
-    out[d] = (await env.KV_STORE.get(`rambles_${d}`, { type: 'json' })) || [];
-  }
+  dates.forEach((d, i) => { out[d] = lists[i] || []; });
   return out;
 }

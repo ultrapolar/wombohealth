@@ -212,22 +212,22 @@ static void prv_activity_update(Layer *layer, GContext *ctx) {
 // Heartbeat lub-dub: radius bump per animation frame (~70ms each).
 static const int8_t PULSE[16] = {0, 2, 5, 8, 4, 1, 3, 6, 3, 1, 0, 0, 0, 0, 0, 0};
 
+// The heart card redraws every pulse tick, so its paths are allocated once
+// and mutated in place — per-frame gpath_create/destroy churns the heap.
+static GPoint s_heart_tri_points[3];
+static GPath *s_heart_tri;
+static GPoint s_trend_tri_points[3];
+static GPath *s_trend_tri;
+
 static void prv_draw_heart(GContext *ctx, GPoint c, int r, GColor color) {
   graphics_context_set_fill_color(ctx, color);
-  // Two lobes + a triangle-ish point drawn with a fan of circles.
+  // Two lobes + a triangle point.
   graphics_fill_circle(ctx, GPoint(c.x - r / 2, c.y - r / 3), r / 2 + 1);
   graphics_fill_circle(ctx, GPoint(c.x + r / 2, c.y - r / 3), r / 2 + 1);
-  GPathInfo tri = {
-    .num_points = 3,
-    .points = (GPoint[]){
-      {(int16_t)(c.x - r), (int16_t)(c.y - r / 4)},
-      {(int16_t)(c.x + r), (int16_t)(c.y - r / 4)},
-      {(int16_t)(c.x), (int16_t)(c.y + r)},
-    },
-  };
-  GPath *path = gpath_create(&tri);
-  gpath_draw_filled(ctx, path);
-  gpath_destroy(path);
+  s_heart_tri_points[0] = GPoint(c.x - r, c.y - r / 4);
+  s_heart_tri_points[1] = GPoint(c.x + r, c.y - r / 4);
+  s_heart_tri_points[2] = GPoint(c.x, c.y + r);
+  gpath_draw_filled(ctx, s_heart_tri);
 }
 
 static void prv_heart_update(Layer *layer, GContext *ctx) {
@@ -260,20 +260,13 @@ static void prv_heart_update(Layer *layer, GContext *ctx) {
     const int w = b.size.w - PBL_IF_ROUND_ELSE(72, 44);
     GPoint t = GPoint((b.size.w + w) / 2 - 14, b.size.h - PBL_IF_ROUND_ELSE(46, 40) + 15);
     const int up = (s_state.hrv_trend > 0) ? -1 : 1;
-    GPathInfo tri = {
-      .num_points = 3,
-      .points = (GPoint[]){
-        {(int16_t)(t.x - 4), (int16_t)(t.y - 3 * up)},
-        {(int16_t)(t.x + 4), (int16_t)(t.y - 3 * up)},
-        {(int16_t)(t.x), (int16_t)(t.y + 4 * up)},
-      },
-    };
-    GPath *path = gpath_create(&tri);
+    s_trend_tri_points[0] = GPoint(t.x - 4, t.y - 3 * up);
+    s_trend_tri_points[1] = GPoint(t.x + 4, t.y - 3 * up);
+    s_trend_tri_points[2] = GPoint(t.x, t.y + 4 * up);
     graphics_context_set_fill_color(ctx, s_state.hrv_trend > 0
         ? PBL_IF_COLOR_ELSE(GColorIslamicGreen, GColorBlack)
         : PBL_IF_COLOR_ELSE(GColorRed, GColorBlack));
-    gpath_draw_filled(ctx, path);
-    gpath_destroy(path);
+    gpath_draw_filled(ctx, s_trend_tri);
   }
   prv_draw_stale(ctx, b, PBL_IF_COLOR_ELSE(GColorLightGray, GColorBlack));
 }
@@ -790,6 +783,9 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
+  s_heart_tri = gpath_create(&(GPathInfo){.num_points = 3, .points = s_heart_tri_points});
+  s_trend_tri = gpath_create(&(GPathInfo){.num_points = 3, .points = s_trend_tri_points});
+
   if (prv_state_load()) {
     s_have_data = true;
   }
@@ -809,6 +805,8 @@ static void prv_init(void) {
 
 static void prv_deinit(void) {
   animation_unschedule_all();
+  gpath_destroy(s_heart_tri);
+  gpath_destroy(s_trend_tri);
   window_destroy(s_window);
 }
 

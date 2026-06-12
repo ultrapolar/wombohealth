@@ -457,11 +457,12 @@ def _insert_into_section(lines: list[str], header: str, new_line: str) -> list[s
     """Append new_line at the end of `header`'s section, creating the section
     (in canonical order) if it doesn't exist."""
     if header in lines:
-        i = lines.index(header) + 1
+        header_idx = lines.index(header)
+        i = header_idx + 1
         while i < len(lines) and not lines[i].startswith("## "):
             i += 1
         # back up over trailing blank lines so items stay contiguous
-        while i > 0 and i - 1 > lines.index(header) and lines[i - 1].strip() == "":
+        while i - 1 > header_idx and lines[i - 1].strip() == "":
             i -= 1
         return lines[:i] + [new_line] + lines[i:]
 

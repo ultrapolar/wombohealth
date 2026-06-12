@@ -186,8 +186,12 @@ function sync() {
       sendError('Bad JSON from worker');
       return;
     }
+    // Agenda first — the watch shouldn't wait on up to two dozen pin PUTs.
+    sendAgenda(events, 'pins syncing...');
     pushPins(events, function (pinStatus) {
-      sendAgenda(events, pinStatus);
+      Pebble.sendAppMessage(
+        { STATUS: Math.min(events.length, MAX_SEND) + ' events · ' + pinStatus },
+        null, function () {});
     });
   };
   xhr.onerror = function () { sendError('Network error reaching worker'); };

@@ -167,8 +167,12 @@ export default {
       if (path === '/calendar') {
         if (!keyOk()) return json({ error: 'unauthorized' }, 401);
         const daysN = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '4', 10) || 4, 1), 14);
+        // Cache fingerprint: invalidates when the configured feed URL(s) change.
+        let srcId = 5381;
+        for (const c of String(env.PROTON_ICS_URL || '')) srcId = ((srcId * 33) ^ c.charCodeAt(0)) >>> 0;
         const cached = await env.KV_STORE.get('calendar_cache', { type: 'json' });
-        if (cached && cached.days === daysN && Date.now() - cached.ts < 10 * 60 * 1000) {
+        if (cached && cached.days === daysN && cached.src === srcId &&
+            Date.now() - cached.ts < 10 * 60 * 1000) {
           return json({ events: cached.events, cached: true }, 200, { 'Cache-Control': 'no-store' });
         }
         const [y, mo, d] = todayStr.split('-').map(Number);
@@ -177,7 +181,7 @@ export default {
         const events = await fetchAgenda(env, windowStart, windowEnd, tz);
         if (events === null) return json({ error: 'PROTON_ICS_URL not configured' }, 400);
         ctx.waitUntil(env.KV_STORE.put('calendar_cache',
-          JSON.stringify({ ts: Date.now(), days: daysN, events })));
+          JSON.stringify({ ts: Date.now(), days: daysN, src: srcId, events })));
         return json({ events }, 200, { 'Cache-Control': 'no-store' });
       }
 

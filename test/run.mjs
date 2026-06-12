@@ -191,5 +191,28 @@ assert.deepEqual(days, [3, 5], 'standup lands Wed+Fri (Mon excluded)');
 assert.equal(new Date(standups[0].start * 1000).getUTCHours(), 7, 'TZID converted with DST');
 assert.ok(agenda.every((e, i) => i === 0 || agenda[i - 1].start <= e.start), 'agenda sorted');
 
+// Recurrence must be expanded in wall-clock space, not epoch space:
+// (a) a weekly 09:15 Zurich meeting created in winter (CET, UTC+1) must still
+//     be 09:15 local in summer (CEST, UTC+2) -> 07:15 UTC, not 08:15.
+const winterSeries = parseICS([
+  'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:winter@x',
+  'DTSTART;TZID=Europe/Zurich:20260105T091500',
+  'DTEND;TZID=Europe/Zurich:20260105T100000',
+  'RRULE:FREQ=WEEKLY;BYDAY=MO', 'SUMMARY:Winter standup',
+  'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+const summerOcc = expandEvents(winterSeries, Date.UTC(2026, 5, 12), Date.UTC(2026, 5, 19), 'Europe/Zurich');
+assert.equal(summerOcc.length, 1, 'one Monday in window');
+assert.equal(new Date(summerOcc[0].start * 1000).getUTCHours(), 7, 'wall-clock 09:15 across DST change');
+// (b) BYDAY matches the LOCAL weekday: Mon 00:30 Zurich = Sun 22:30/23:30 UTC.
+const midnightSeries = parseICS([
+  'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:mid@x',
+  'DTSTART;TZID=Europe/Zurich:20260105T003000',
+  'DTEND;TZID=Europe/Zurich:20260105T013000',
+  'RRULE:FREQ=WEEKLY;BYDAY=MO', 'SUMMARY:Midnight Monday',
+  'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+const midOcc = expandEvents(midnightSeries, Date.UTC(2026, 5, 12), Date.UTC(2026, 5, 19), 'Europe/Zurich');
+assert.equal(midOcc.length, 1, 'local-Monday event near midnight not dropped');
+assert.equal(new Date(midOcc[0].start * 1000).getUTCDay(), 0, 'occurrence is Sunday in UTC (Monday in Zurich)');
+
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

@@ -233,6 +233,8 @@ static void prv_request_sync(void) {
   app_message_outbox_send();
 }
 
+static void prv_spin_tick(void *ctx);
+
 static void prv_select_long(MenuLayer *ml, MenuIndex *idx, void *ctx) {
   vibes_short_pulse();
   s_loaded = false;
@@ -242,6 +244,9 @@ static void prv_select_long(MenuLayer *ml, MenuIndex *idx, void *ctx) {
   snprintf(s_status, sizeof(s_status), "Syncing...");
   layer_set_hidden(s_spinner_layer, false);
   menu_layer_reload_data(s_menu);
+  if (!s_spin_timer) {  // the tick chain stops itself once loaded; re-arm it
+    s_spin_timer = app_timer_register(80, prv_spin_tick, NULL);
+  }
   prv_request_sync();
 }
 

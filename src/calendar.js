@@ -113,7 +113,18 @@ export function parseICS(text) {
   return events;
 }
 
-function* occurrences(ev, startMs, durMs, windowEndMs, tz) {
+// Recurrence is expanded in *wall-clock* space: we step calendar days/months
+// on the event's local date and convert each occurrence to an epoch
+// individually. Stepping raw epochs by 86400000 would freeze the UTC time,
+// shifting the local time by an hour across DST (a weekly 09:15 CET meeting
+// would render as 10:15 in summer) and matching BYDAY against the UTC
+// weekday, which is wrong for events near local midnight.
+function* occurrences(ev, windowEndMs, tz) {
+  const dt = ev.dtstart;
+  const zone = dt.utc ? null : tz; // UTC events do their wall-clock math in UTC
+  const at = (y, mo, d) => epochFromLocal(y, mo, d, dt.h, dt.mi, dt.s, zone);
+  const startMs = at(dt.y, dt.mo, dt.d);
+
   const r = ev.rrule;
   if (!r) {
     yield startMs;
@@ -123,29 +134,30 @@ function* occurrences(ev, startMs, durMs, windowEndMs, tz) {
   const interval = Math.max(1, parseInt(r.INTERVAL || '1', 10) || 1);
   const count = r.COUNT ? parseInt(r.COUNT, 10) : null;
   const until = r.UNTIL ? toEpochMs(parseDate(r.UNTIL), tz) : null;
-  const limit = (t, n) =>
-    t > windowEndMs || (until !== null && t > until) || (count !== null && n >= count);
 
   if (freq === 'DAILY' || (freq === 'WEEKLY' && r.BYDAY)) {
-    // Walk day by day; for WEEKLY+BYDAY include matching weekdays of in-interval weeks.
+    // Walk local calendar days; day0 is a pure date counter (UTC noon-free),
+    // so getUTCDay() below is the *local* weekday of the occurrence.
     const bydays = freq === 'WEEKLY'
       ? r.BYDAY.split(',').map((d) => WEEKDAYS[d.trim().toUpperCase()]).filter((x) => x !== undefined)
       : null;
     const DAY = 86400000;
+    const day0 = Date.UTC(dt.y, dt.mo - 1, dt.d);
     let n = 0;
     for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const t = startMs + i * DAY;
-      if (t > windowEndMs || (until !== null && t > until)) return;
+      const dd = new Date(day0 + i * DAY);
       let match;
       if (bydays) {
         const wk = Math.floor(i / 7);
-        match = wk % interval === 0 && bydays.includes(new Date(t).getUTCDay());
+        match = wk % interval === 0 && bydays.includes(dd.getUTCDay());
         // first instance is always DTSTART itself per RFC
         if (i === 0) match = true;
       } else {
         match = i % interval === 0;
       }
       if (!match) continue;
+      const t = at(dd.getUTCFullYear(), dd.getUTCMonth() + 1, dd.getUTCDate());
+      if (t > windowEndMs || (until !== null && t > until)) return;
       if (count !== null && n >= count) return;
       n++;
       yield t;
@@ -153,27 +165,24 @@ function* occurrences(ev, startMs, durMs, windowEndMs, tz) {
     return;
   }
 
-  // WEEKLY (no BYDAY) / MONTHLY / YEARLY: step the start datetime.
-  const start = new Date(startMs);
+  // WEEKLY (no BYDAY) / MONTHLY / YEARLY: step the local start date.
   let n = 0;
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    let t;
+    let dd;
     if (freq === 'WEEKLY') {
-      t = startMs + i * interval * 7 * 86400000;
+      dd = new Date(Date.UTC(dt.y, dt.mo - 1, dt.d + i * interval * 7));
     } else if (freq === 'MONTHLY') {
-      const d = new Date(start);
-      d.setUTCMonth(d.getUTCMonth() + i * interval);
-      if (d.getUTCDate() !== start.getUTCDate()) continue; // skipped short month
-      t = d.getTime();
+      dd = new Date(Date.UTC(dt.y, dt.mo - 1 + i * interval, dt.d));
+      if (dd.getUTCDate() !== dt.d) continue; // skipped short month
     } else if (freq === 'YEARLY') {
-      const d = new Date(start);
-      d.setUTCFullYear(d.getUTCFullYear() + i * interval);
-      t = d.getTime();
+      dd = new Date(Date.UTC(dt.y + i * interval, dt.mo - 1, dt.d));
     } else {
       if (i === 0) yield startMs; // unknown FREQ -> single occurrence
       return;
     }
-    if (limit(t, n)) return;
+    const t = at(dd.getUTCFullYear(), dd.getUTCMonth() + 1, dd.getUTCDate());
+    if (t > windowEndMs || (until !== null && t > until)) return;
+    if (count !== null && n >= count) return;
     n++;
     yield t;
   }
@@ -201,7 +210,7 @@ export function expandEvents(rawEvents, windowStartMs, windowEndMs, tz) {
     }
     const exdates = new Set(ev.exdates.map((d) => toEpochMs(d, tz)));
 
-    for (const occ of occurrences(ev, startMs, durMs, windowEndMs, tz)) {
+    for (const occ of occurrences(ev, windowEndMs, tz)) {
       if (occ + durMs <= windowStartMs || occ > windowEndMs) continue;
       if (exdates.has(occ)) continue;
       if (ev.rrule && !ev.recurrenceId && overridden.has(`${ev.uid}@${occ}`)) continue;
