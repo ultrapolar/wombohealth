@@ -17,7 +17,7 @@ test/sandbox/vault/
 # obsidian plugin build
 obsidian-plugin/node_modules/
 obsidian-plugin/main.js
-obsidian-plugin/test/stats.bundle.mjs
+obsidian-plugin/test/*.bundle.mjs
 
 .DS_Store
 Thumbs.db
