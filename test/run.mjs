@@ -11,6 +11,8 @@ import { normalize as polarNormalize } from '../src/sources/polar.js';
 import { normalize as samsungNormalize } from '../src/sources/samsung.js';
 import { sanitize as wyzeSanitize } from '../src/sources/wyze.js';
 import { buildUnified } from '../src/aggregate.js';
+import { routeRamble } from '../src/rambles.js';
+import { parseICS, expandEvents } from '../src/calendar.js';
 import { buildDisplay } from '../src/display.js';
 import { weeklyChart, trend, formatDuration, isValidDate, timingSafeEqual } from '../src/lib/util.js';
 
@@ -146,6 +148,71 @@ const dispBody = buildDisplay({
 assert.equal(dispBody.body.weight, '78.2kg', 'display body weight');
 assert.equal(dispBody.body.body_fat, '18.4%', 'display body fat');
 assert.equal(dispBody.body.stale, true, 'display body carried-forward flag');
+
+// --- Rambles keyword routing ---
+const r1 = routeRamble('To do buy oat milk');
+assert.equal(r1.category, 'todo', 'todo keyword routed');
+assert.equal(r1.text, 'buy oat milk', 'todo keyword stripped');
+const r2 = routeRamble('Important, call mom tomorrow');
+assert.equal(r2.category, 'important', 'important keyword routed');
+assert.equal(r2.text, 'call mom tomorrow', 'important keyword + punctuation stripped');
+const r3 = routeRamble('just walked past the bakery again');
+assert.equal(r3.category, 'ramble', 'no keyword -> ramble');
+assert.equal(r3.text, 'just walked past the bakery again', 'ramble text untouched');
+const r4 = routeRamble('idea: pebble app that waters plants');
+assert.equal(r4.category, 'idea', 'idea keyword routed');
+assert.equal(r4.text, 'pebble app that waters plants', 'idea colon stripped');
+const r5 = routeRamble('to do get eggs', 'important');
+assert.equal(r5.category, 'important', 'explicit category override wins');
+assert.equal(r5.text, 'get eggs', 'keyword still stripped on override');
+assert.equal(routeRamble('todo'), null, 'keyword-only note rejected');
+assert.equal(routeRamble('   '), null, 'blank note rejected');
+assert.equal(routeRamble('todoist sounds nice').category, 'ramble', 'keyword must be a whole word');
+
+// --- Proton/ICS calendar ---
+const ics = readFileSync(join(here, 'fixtures', 'proton.sample.ics'), 'utf8');
+const rawEvents = parseICS(ics);
+assert.equal(rawEvents.length, 4, 'ics vevent count');
+// Window: Fri 2026-06-12 00:00 UTC .. +7 days
+const winStart = Date.UTC(2026, 5, 12);
+const winEnd = winStart + 7 * 86400000;
+const agenda = expandEvents(rawEvents, winStart, winEnd, 'Europe/Zurich');
+const titles = agenda.map((e) => e.title);
+assert.ok(titles.includes('Dentist, Dr. Molar'), 'escaped comma unescaped');
+assert.ok(!titles.includes('Ancient history'), 'past event excluded');
+const folded = agenda.find((e) => e.all_day);
+assert.ok(folded && folded.title.endsWith('folds across lines'), 'folded line + all-day');
+const standups = agenda.filter((e) => e.title === 'Standup');
+// Week of Jun 12-18 has Fri 12, Mon 15 (EXDATE'd), Wed 17 -> 2 instances
+assert.equal(standups.length, 2, 'weekly BYDAY expansion with EXDATE');
+const days = standups.map((e) => new Date(e.start * 1000).getUTCDay()).sort();
+assert.deepEqual(days, [3, 5], 'standup lands Wed+Fri (Mon excluded)');
+// TZID Europe/Zurich 09:15 in June = 07:15 UTC (CEST)
+assert.equal(new Date(standups[0].start * 1000).getUTCHours(), 7, 'TZID converted with DST');
+assert.ok(agenda.every((e, i) => i === 0 || agenda[i - 1].start <= e.start), 'agenda sorted');
+
+// Recurrence must be expanded in wall-clock space, not epoch space:
+// (a) a weekly 09:15 Zurich meeting created in winter (CET, UTC+1) must still
+//     be 09:15 local in summer (CEST, UTC+2) -> 07:15 UTC, not 08:15.
+const winterSeries = parseICS([
+  'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:winter@x',
+  'DTSTART;TZID=Europe/Zurich:20260105T091500',
+  'DTEND;TZID=Europe/Zurich:20260105T100000',
+  'RRULE:FREQ=WEEKLY;BYDAY=MO', 'SUMMARY:Winter standup',
+  'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+const summerOcc = expandEvents(winterSeries, Date.UTC(2026, 5, 12), Date.UTC(2026, 5, 19), 'Europe/Zurich');
+assert.equal(summerOcc.length, 1, 'one Monday in window');
+assert.equal(new Date(summerOcc[0].start * 1000).getUTCHours(), 7, 'wall-clock 09:15 across DST change');
+// (b) BYDAY matches the LOCAL weekday: Mon 00:30 Zurich = Sun 22:30/23:30 UTC.
+const midnightSeries = parseICS([
+  'BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:mid@x',
+  'DTSTART;TZID=Europe/Zurich:20260105T003000',
+  'DTEND;TZID=Europe/Zurich:20260105T013000',
+  'RRULE:FREQ=WEEKLY;BYDAY=MO', 'SUMMARY:Midnight Monday',
+  'END:VEVENT', 'END:VCALENDAR'].join('\r\n'));
+const midOcc = expandEvents(midnightSeries, Date.UTC(2026, 5, 12), Date.UTC(2026, 5, 19), 'Europe/Zurich');
+assert.equal(midOcc.length, 1, 'local-Monday event near midnight not dropped');
+assert.equal(new Date(midOcc[0].start * 1000).getUTCDay(), 0, 'occurrence is Sunday in UTC (Monday in Zurich)');
 
 console.log('PASS: worker logic + all source normalizers OK');
 console.log(`sources in unified model: ${['ultrahuman', 'withings', 'fitbit', 'polar', 'samsung'].filter((k) => k === 'ultrahuman' || unified[k]).join(', ')}`);

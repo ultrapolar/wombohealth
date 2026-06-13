@@ -1,0 +1,74 @@
+{
+  "name": "wombo-health",
+  "author": "ultrapolar",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Wombo Health",
+    "uuid": "550223f4-3f57-45f9-8016-97898bd7fd2c",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "capabilities": ["configurable"],
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "SLEEP_SCORE",
+      "SLEEP_DURATION",
+      "SLEEP_DEEP",
+      "SLEEP_REM",
+      "SLEEP_CYCLES",
+      "RECOVERY",
+      "HRV",
+      "RHR",
+      "SPO2",
+      "TEMP",
+      "STEPS",
+      "ACTIVE_MIN",
+      "MOVE_IDX",
+      "VO2_MAX",
+      "HOME_ENABLED",
+      "HOME_AQI",
+      "HOME_CO2",
+      "HOME_PM25",
+      "HOME_TEMP",
+      "HOME_HUMIDITY",
+      "HOME_NOISE",
+      "BODY_PRESENT",
+      "BODY_WEIGHT",
+      "BODY_FAT",
+      "BODY_MUSCLE",
+      "BODY_WATER",
+      "BODY_MEASURED",
+      "UPDATED",
+      "STALE",
+      "STEPS_NUM",
+      "STEPS_PCT",
+      "TYPICAL_PCT",
+      "SLEEP_MIN",
+      "RHR_NUM",
+      "HRV_NUM",
+      "HRV_TREND",
+      "ERROR",
+      "REQUEST_REFRESH",
+      "workerUrl",
+      "exportKey"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}

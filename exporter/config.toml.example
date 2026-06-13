@@ -15,6 +15,11 @@ backfill_days = 3      # each run re-syncs the last N days (covers missed runs /
 # health-md-visualizations Obsidian plugin. Leave blank to disable.
 health_folder = "Health"
 
+# Optional: where dictated Pebble voice notes land (one file per day, sections
+# for To Do / Important / Ideas / Questions / Rambles). Leave blank to disable.
+# Tip: schedule `python export.py --rambles-only` every 15 min for fast sync.
+rambles_folder = "Rambles"
+
 # --- Wyze smart scale (optional) — used only by wyze_pull.py ---
 # Requires `pip install wyze-sdk` and an API key from https://developer-api-console.wyze.com
 # (same Wyze account). Scripted login needs authenticator-app (TOTP) 2FA; SMS/email MFA

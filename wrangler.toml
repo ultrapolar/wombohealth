@@ -31,6 +31,7 @@ POLAR_CLIENT_ID = ""
 #   npx wrangler secret put WITHINGS_CLIENT_SECRET # only if connecting Withings
 #   npx wrangler secret put FITBIT_CLIENT_SECRET   # only if connecting Fitbit
 #   npx wrangler secret put POLAR_CLIENT_SECRET    # only if connecting Polar
+#   npx wrangler secret put PROTON_ICS_URL        # Proton Calendar "share via link" ICS URL(s), comma-separated — a capability URL, keep it secret
 #
 # Register each dev app with redirect URI: https://<your-worker>/callback/<source>
 #   Withings: https://developer.withings.com/   Fitbit: https://dev.fitbit.com/   Polar: https://admin.polaraccesslink.com/

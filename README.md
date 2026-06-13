@@ -8,6 +8,7 @@ Forked from [Jay9185/TRMNL-ULTRAHUMAN](https://github.com/Jay9185/TRMNL-ULTRAHUM
 - Cloudflare Worker is the **single source of truth**: it serves the TRMNL display payload **and** a secured JSON route.
 - A small **Python exporter** writes a non-destructive **Health block + Dataview inline fields** into your daily note each morning.
 - Built around a **source-adapter pattern** so Withings / Fitbit / Polar (and later Samsung) plug in without rewrites.
+- A **Pebble watchapp** ([`pebble/`](pebble/)) shows the same dashboard on your wrist — works with the original watches and the new [Core Devices](https://github.com/coredevices) ones.
 
 ## Architecture
 
@@ -42,6 +43,9 @@ test/
   run.mjs               # offline worker-logic test (node test/run.mjs)
   fixtures/             # sample API + unified payloads
 obsidian-plugin/        # custom multi-source dashboard plugin (per-device tabs, tiering, weighted blend)
+pebble/                 # Pebble watchapp: dashboard cards on your wrist (Core Devices SDK)
+pebble-rambles/         # Pebble watchapp: dictate voice notes into the vault's Rambles folder
+pebble-protoncal/       # Pebble watchapp: Proton Calendar agenda + system timeline pins
 ```
 
 ## Setup
@@ -140,6 +144,33 @@ Captured: weight, BMI, body fat %, muscle, body water %, BMR, visceral fat, bone
 metabolic age, protein. Weigh-ins are sparse, so the latest reading is carried forward and
 shown "as of &lt;date&gt;". (Heads-up: it's a reverse-engineered API — it can break when Wyze
 changes auth; a break only stops scale updates, the rest of the pipeline keeps working.)
+
+### 8. Pebble watch (optional)
+A native watchapp in [`pebble/`](pebble/) recreates the built-in PebbleOS Health app —
+same sliding cards and overshoot animations — but fed by this Worker (Activity ·
+Heart · Sleep · Air · Body). Works on any Pebble, including the new
+[Core Devices](https://github.com/coredevices) Core 2 Duo / Core Time 2, and can
+**take over the watchface's UP button** via Settings → Quick Launch → Tap Up.
+The phone-side JS polls the Worker's existing `GET /?key=…` payload, so there's
+nothing to deploy — build the `.pbw`, install it, and enter your Worker URL +
+export key in the app's settings page. See [`pebble/README.md`](pebble/README.md).
+
+### 9. Dictated notes from the watch (optional)
+[`pebble-rambles/`](pebble-rambles/) is a second watchapp: press a button, talk, and the
+note lands in your vault under `Rambles/YYYY-MM-DD.md`. Starting a note with **"to do"**,
+**"important"**, **"idea"** or **"question"** files it under that section (todos become
+`- [ ]` checkboxes); the keyword is stripped. The Worker stores notes via
+`POST /ingest/ramble` (key-gated, size-capped) and the exporter appends them on its normal
+run — or schedule `python export.py --rambles-only` every 15 min for near-real-time sync.
+Set `rambles_folder` in `exporter/config.toml`. See [`pebble-rambles/README.md`](pebble-rambles/README.md).
+
+### 10. Proton Calendar on the watch timeline (optional)
+[`pebble-protoncal/`](pebble-protoncal/) puts **Proton Calendar** where Google Calendar
+normally lives: events are pushed as native **timeline pins** and shown in an in-app agenda.
+Proton has no public API, so the Worker reads the read-only ICS feed from Proton's
+**Share with anyone via link** (set it with `npx wrangler secret put PROTON_ICS_URL`; the
+new `GET /calendar` route parses + expands recurrences server-side). Works with any ICS
+feed, not just Proton. See [`pebble-protoncal/README.md`](pebble-protoncal/README.md).
 
 ## How it works
 - **GET /** — today's metrics as the flat payload TRMNL renders. Falls back to yesterday's cached

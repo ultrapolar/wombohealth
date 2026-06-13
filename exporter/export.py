@@ -414,6 +414,97 @@ def render_block(data: dict) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Rambles (dictated voice notes from the Pebble)
+# --------------------------------------------------------------------------- #
+# One file per day in the rambles folder. Items are appended under a section
+# chosen by category and tagged with an invisible `%% r:<id> %%` comment for
+# dedup, so re-runs never duplicate and your edits (e.g. checking off a todo)
+# are preserved.
+RAMBLE_SECTIONS = {
+    "important": "## Important",
+    "todo": "## To Do",
+    "idea": "## Ideas",
+    "question": "## Questions",
+    "ramble": "## Rambles",
+}
+RAMBLE_SECTION_ORDER = ["## Important", "## To Do", "## Ideas", "## Questions", "## Rambles"]
+
+
+def fetch_rambles(worker_url: str, key: str | None, days: int, timeout: int = 20) -> dict:
+    url = f"{worker_url.rstrip('/')}/rambles?days={days}"
+    headers = {"X-Export-Key": key} if key else {}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8")).get("days", {})
+
+
+def format_ramble_line(item: dict) -> str:
+    text = " ".join(str(item.get("text", "")).split())
+    marker = f"%% r:{item.get('id')} %%"
+    cat = item.get("category", "ramble")
+    if cat == "todo":
+        return f"- [ ] {text} {marker}"
+    if cat == "important":
+        return f"- **{text}** {marker}"
+    try:
+        hhmm = datetime.fromtimestamp(item["ts"] / 1000).strftime("%H:%M")
+    except (KeyError, TypeError, ValueError, OSError):
+        hhmm = "--:--"
+    return f"- {hhmm} — {text} {marker}"
+
+
+def _insert_into_section(lines: list[str], header: str, new_line: str) -> list[str]:
+    """Append new_line at the end of `header`'s section, creating the section
+    (in canonical order) if it doesn't exist."""
+    if header in lines:
+        header_idx = lines.index(header)
+        i = header_idx + 1
+        while i < len(lines) and not lines[i].startswith("## "):
+            i += 1
+        # back up over trailing blank lines so items stay contiguous
+        while i - 1 > header_idx and lines[i - 1].strip() == "":
+            i -= 1
+        return lines[:i] + [new_line] + lines[i:]
+
+    order = RAMBLE_SECTION_ORDER.index(header) if header in RAMBLE_SECTION_ORDER else 99
+    insert_at = len(lines)
+    for j, line in enumerate(lines):
+        if line.startswith("## ") and line in RAMBLE_SECTION_ORDER \
+                and RAMBLE_SECTION_ORDER.index(line) > order:
+            insert_at = j
+            break
+    block = [header, new_line, ""]
+    if insert_at == len(lines) and lines and lines[-1].strip() != "":
+        block = [""] + block
+    return lines[:insert_at] + block + lines[insert_at:]
+
+
+def upsert_rambles(vault: Path, folder: str, iso: str, items: list[dict], dry_run: bool) -> str | None:
+    if not items:
+        return None
+    path = vault / folder / f"{iso}.md"
+    content = path.read_text(encoding="utf-8") if path.exists() else f"# Rambles — {iso}\n"
+
+    new_items = [i for i in items if f"r:{i.get('id')}" not in content]
+    if not new_items:
+        return None
+
+    lines = content.split("\n")
+    for item in sorted(new_items, key=lambda i: i.get("ts", 0)):
+        header = RAMBLE_SECTIONS.get(item.get("category", "ramble"), "## Rambles")
+        lines = _insert_into_section(lines, header, format_ramble_line(item))
+    new_content = "\n".join(lines)
+    if not new_content.endswith("\n"):
+        new_content += "\n"
+
+    if dry_run:
+        return f"[dry-run] would add {len(new_items)} ramble(s): {path}\n\n{new_content}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(new_content, encoding="utf-8")
+    return f"added {len(new_items)} ramble(s): {path}"
+
+
+# --------------------------------------------------------------------------- #
 # Upsert into the daily note
 # --------------------------------------------------------------------------- #
 BLOCK_RE = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
@@ -473,6 +564,8 @@ def main() -> int:
     ap.add_argument("--health-folder", help="also write Health/<date>.md data files here (for health-md-visualizations)")
     ap.add_argument("--no-health", action="store_true", help="skip the Health/ data file even if configured")
     ap.add_argument("--health-only", action="store_true", help="only write Health/ data files; skip the daily-note block (good for bulk history backfill)")
+    ap.add_argument("--rambles-only", action="store_true", help="only sync dictated rambles (fast; good for a frequent scheduled task)")
+    ap.add_argument("--no-rambles", action="store_true", help="skip the rambles sync even if configured")
     args = ap.parse_args()
 
     # Ensure unicode (°, ▲, 🩺, …) prints cleanly regardless of console codepage.
@@ -511,9 +604,11 @@ def main() -> int:
         today = date.today()
         days = [today - timedelta(days=i) for i in range(backfill)]
 
+    rambles_folder = "" if args.no_rambles else cfg.get("rambles_folder", "")
+
     daily_dir = vault / daily_folder
     rc = 0
-    for d in days:
+    for d in [] if args.rambles_only else days:
         iso = d.strftime("%Y-%m-%d")
         try:
             if args.input:
@@ -544,6 +639,18 @@ def main() -> int:
 
         if health_folder:
             log.info(write_health_file(vault, health_folder, iso, render_health_frontmatter(data), args.dry_run))
+
+    # Dictated voice notes -> Rambles/<date>.md (append-only, keyword-routed sections).
+    if rambles_folder and worker and not args.input:
+        try:
+            by_day = fetch_rambles(worker, key, len(days))
+            for iso, items in sorted(by_day.items()):
+                msg = upsert_rambles(vault, rambles_folder, iso, items, args.dry_run)
+                if msg:
+                    log.info(msg)
+        except Exception as e:  # noqa: BLE001
+            log.warning("rambles sync failed: %s", e)
+            rc = 1
 
     return rc
 

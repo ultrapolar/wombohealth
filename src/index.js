@@ -6,6 +6,9 @@
 //   GET  /connect/:source   -> begin OAuth for withings|fitbit|polar (issues a one-time state)
 //   GET  /callback/:source  -> OAuth redirect target; verifies the state, stores tokens (public by necessity)
 //   POST /ingest/samsung    -> on-device bridge pushes a day's metrics (sanitized to numbers)
+//   POST /ingest/ramble     -> dictated voice note from the Pebble (routed by keyword)
+//   GET  /rambles?days=     -> stored voice notes, for the exporter
+//   GET  /calendar?days=    -> Proton/ICS agenda window (for the Pebble timeline app)
 import { localDateStr, addDays, weeklyChart, trend, isValidDate, timingSafeEqual } from './lib/util.js';
 import { fetchRing, fetchHome, ringIsEmpty, emptyRing, fetchRaw, RING_URL, HOME_URL } from './sources/ultrahuman.js';
 import { buildUnified } from './aggregate.js';
@@ -16,6 +19,8 @@ import * as fitbit from './sources/fitbit.js';
 import * as polar from './sources/polar.js';
 import * as samsung from './sources/samsung.js';
 import * as wyze from './sources/wyze.js';
+import * as rambles from './rambles.js';
+import { fetchAgenda, epochFromLocal } from './calendar.js';
 
 const AUDIT_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const DISPLAY_TTL_MS = 120 * 1000;                 // server-side cache for "/" (caps upstream fan-out)
@@ -124,6 +129,60 @@ export default {
         if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
         await wyze.ingest(env, date, body); // ingest() drops everything but allowlisted numbers
         return json({ ok: true, date });
+      }
+
+      // --- Ramble ingest (dictated voice notes from the Pebble; routed + size-capped) ---
+      if (path === '/ingest/ramble') {
+        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
+        if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
+        if (Number(request.headers.get('content-length') || 0) > MAX_INGEST_BYTES) {
+          return json({ error: 'body too large' }, 413);
+        }
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== 'object') return json({ error: 'invalid JSON body' }, 400);
+        const date = validDate(url.searchParams.get('date') || body.date);
+        if (!date) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
+        const item = await rambles.ingest(env, date, body); // strips keyword, caps size/count
+        if (!item) return json({ error: 'empty or rejected' }, 400);
+        return json({ ok: true, date, item });
+      }
+
+      // --- Ramble list (the exporter pulls these into the vault) ---
+      if (path === '/rambles') {
+        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
+        const single = url.searchParams.get('date');
+        let dates;
+        if (single) {
+          const d = validDate(single);
+          if (!d) return json({ error: 'invalid date (YYYY-MM-DD)' }, 400);
+          dates = [d];
+        } else {
+          const n = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '3', 10) || 3, 1), 31);
+          dates = Array.from({ length: n }, (_, i) => addDays(todayStr, -i));
+        }
+        return json({ days: await rambles.listDays(env, dates) }, 200, { 'Cache-Control': 'no-store' });
+      }
+
+      // --- Proton/ICS calendar agenda (drives the Pebble timeline app) ---
+      if (path === '/calendar') {
+        if (!keyOk()) return json({ error: 'unauthorized' }, 401);
+        const daysN = Math.min(Math.max(parseInt(url.searchParams.get('days') ?? '4', 10) || 4, 1), 14);
+        // Cache fingerprint: invalidates when the configured feed URL(s) change.
+        let srcId = 5381;
+        for (const c of String(env.PROTON_ICS_URL || '')) srcId = ((srcId * 33) ^ c.charCodeAt(0)) >>> 0;
+        const cached = await env.KV_STORE.get('calendar_cache', { type: 'json' });
+        if (cached && cached.days === daysN && cached.src === srcId &&
+            Date.now() - cached.ts < 10 * 60 * 1000) {
+          return json({ events: cached.events, cached: true }, 200, { 'Cache-Control': 'no-store' });
+        }
+        const [y, mo, d] = todayStr.split('-').map(Number);
+        const windowStart = epochFromLocal(y, mo, d, 0, 0, 0, tz);
+        const windowEnd = windowStart + daysN * 86400000;
+        const events = await fetchAgenda(env, windowStart, windowEnd, tz);
+        if (events === null) return json({ error: 'PROTON_ICS_URL not configured' }, 400);
+        ctx.waitUntil(env.KV_STORE.put('calendar_cache',
+          JSON.stringify({ ts: Date.now(), days: daysN, src: srcId, events })));
+        return json({ events }, 200, { 'Cache-Control': 'no-store' });
       }
 
       // --- debug: raw Ultrahuman responses (to finalize the Home schema) ---
