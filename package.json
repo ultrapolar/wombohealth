@@ -9,6 +9,9 @@
     "deploy": "wrangler deploy",
     "test": "node test/run.mjs"
   },
+  "dependencies": {
+    "itty-router": "^5.0.0"
+  },
   "devDependencies": {
     "wrangler": "^3.90.0"
   }

@@ -8,8 +8,9 @@ never touching the rest of the note. Creates the note from your template if it
 doesn't exist yet.
 
 Usage:
-  python export.py                         # backfill last N days (config) from the Worker
+  python export.py                         # export for today from the Worker
   python export.py --date 2026-05-30       # one specific day
+  python export.py --start-date 2026-05-01 --end-date 2026-05-30 # custom bulk export range
   python export.py --dry-run               # print, don't write
   python export.py --input sample.json --date 2026-05-30 --vault /tmp/vault  # offline test
 
@@ -23,6 +24,7 @@ import json
 import logging
 import re
 import sys
+import time
 import urllib.request
 import urllib.error
 from datetime import date, datetime, timedelta
@@ -56,8 +58,19 @@ def fetch_json(worker_url: str, key: str | None, date_iso: str, timeout: int = 2
     url = f"{worker_url.rstrip('/')}/json?date={date_iso}"
     headers = {"X-Export-Key": key} if key else {}
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    
+    max_retries = 3
+    delay = 2.0
+    for attempt in range(1, max_retries + 2):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            if attempt > max_retries:
+                raise
+            log.warning("Fetch failed (attempt %d/%d): %s. Retrying in %.1fs...", attempt, max_retries + 1, e, delay)
+            time.sleep(delay)
+            delay *= 2.0
 
 
 # --------------------------------------------------------------------------- #
@@ -463,8 +476,9 @@ def upsert(note_path: Path, block: str, template_path: Path | None, dry_run: boo
 def main() -> int:
     ap = argparse.ArgumentParser(description="Export trmnl-health metrics into Obsidian daily notes.")
     ap.add_argument("--config", default=str(Path(__file__).with_name("config.toml")))
-    ap.add_argument("--date", help="single day YYYY-MM-DD (default: backfill last N days)")
-    ap.add_argument("--days", type=int, help="override backfill_days")
+    ap.add_argument("--date", help="single day YYYY-MM-DD (default: today)")
+    ap.add_argument("--start-date", help="bulk backfill start date YYYY-MM-DD")
+    ap.add_argument("--end-date", help="bulk backfill end date YYYY-MM-DD (defaults to today if --start-date is set)")
     ap.add_argument("--dry-run", action="store_true", help="print, don't write")
     ap.add_argument("--input", help="local JSON file instead of the Worker (offline testing)")
     ap.add_argument("--vault", help="override vault_path")
@@ -496,7 +510,6 @@ def main() -> int:
     template_path = (vault / template_rel) if template_rel else None
     worker = args.worker or cfg.get("worker_url")
     key = args.key or cfg.get("export_key")
-    backfill = args.days or int(cfg.get("backfill_days", 3))
     health_folder = "" if args.no_health else (args.health_folder or cfg.get("health_folder", ""))
 
     if not (args.vault or cfg.get("vault_path")):
@@ -507,9 +520,18 @@ def main() -> int:
 
     if args.date:
         days = [datetime.strptime(args.date, "%Y-%m-%d").date()]
+    elif args.start_date:
+        start = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(args.end_date, "%Y-%m-%d").date() if args.end_date else date.today()
+        delta = end - start
+        if delta.days < 0:
+            log.error("--start-date must be <= --end-date")
+            return 2
+        # Generate days in descending order (newest to oldest) like the old backfill logic
+        days = [end - timedelta(days=i) for i in range(delta.days + 1)]
     else:
         today = date.today()
-        days = [today - timedelta(days=i) for i in range(backfill)]
+        days = [today]
 
     daily_dir = vault / daily_folder
     rc = 0
