@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs && node --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "itty-router": "^5.0.0"
